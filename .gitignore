@@ -1,0 +1,15 @@
+# WordPress Plugin Git Ignore
+.DS_Store
+Thumbs.db
+*.log
+.git/
+.svn/
+.idea/
+.vscode/
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Plugin specific
+adc-security-debug-report.txt
+info.json
