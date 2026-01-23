@@ -41,7 +41,7 @@ class ADC_Security_Login {
         // Add rewrite rule
         add_action( 'init', array( $this, 'add_login_rewrite_rule' ) );
         add_filter( 'query_vars', array( $this, 'add_login_query_var' ) );
-        add_action( 'template_include', array( $this, 'load_login_template' ) );
+        add_action( 'template_redirect', array( $this, 'handle_custom_login' ), 1 );
         
         // URLs
         add_filter( 'site_url', array( $this, 'filter_site_url' ), 10, 4 );
@@ -124,34 +124,31 @@ class ADC_Security_Login {
         return $vars;
     }
 
-    public function load_login_template( $template ) {
-        if ( get_query_var( 'adc_login' ) ) {
+    /**
+     * Handle the custom login request processing
+     */
+    public function handle_custom_login() {
+        if ( get_query_var( 'adc_login' ) || isset( $_GET['adc_login'] ) ) {
             // We need to allow wp-login.php to run, but context is different.
             $file = ABSPATH . 'wp-login.php';
             if ( file_exists( $file ) ) {
-                // Initialize globals expected by wp-login.php to avoid warnings
-                if ( ! isset( $user_login ) ) { $user_login = ''; }
-                if ( ! isset( $error ) ) { $error = ''; }
-                
-                // Ensure globally available logic works if needed (though wp-login.php usually sets them)
-                // The issue is likely that when we include it inside a function, scope is local.
-                // We need to make sure variables used in wp-login.php are global or available.
-                // wp-login.php relies on globals.
-                
+                // Initialize globals expected by wp-login.php
                 global $user_login, $user_identity, $error, $action;
                 
-                // Define some defaults if undefined
                 if ( ! isset( $user_login ) ) $user_login = '';
                 if ( ! isset( $error ) ) $error = '';
 
-                // Force 200 OK header (in case we hijacked a 404)
+                // Force 200 OK header (crucial to bypass maintenance/404 logic)
                 status_header( 200 );
+
+                // Some maintenance plugins check for is_login(). Since it's a hardcoded check for wp-login.php script name,
+                // we can't easily spoof it without changing $_SERVER['SCRIPT_NAME'], which is risky.
+                // However, by exiting here, we preempt most maintenance mode logic in template_redirect.
 
                 include $file;
                 exit;
             }
         }
-        return $template;
     }
 
     public function filter_site_url( $url, $path, $scheme, $blog_id = null ) {
@@ -163,8 +160,7 @@ class ADC_Security_Login {
     }
 
     private function replace_login_url( $url, $scheme = null ) {
-        // Don't rewrite if it's a logout action or logout confirmation.
-        if ( strpos( $url, 'action=logout' ) !== false || strpos( $url, 'loggedout=true' ) !== false ) {
+        if ( empty( $this->options['custom_login_slug'] ) ) {
             return $url;
         }
 
@@ -187,8 +183,8 @@ class ADC_Security_Login {
     public function block_wp_login() {
         // If accessing wp-login.php directly and not via our internal include or CLI
         if ( strpos( $_SERVER['REQUEST_URI'], 'wp-login.php' ) !== false && ! isset( $_REQUEST['adc_login'] ) ) {
-            // Allow logout action
-            if ( isset( $_REQUEST['action'] ) && 'logout' === $_REQUEST['action'] ) {
+            // Check if it's an AJAX request or an external API that might need wp-login (rare but possible)
+            if ( defined( 'DOING_AJAX' ) || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) ) {
                 return;
             }
 

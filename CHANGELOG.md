@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.7] - 2026-01-22
+### Fixed
+- **Custom Login URL**: Improved compatibility with maintenance mode plugins (e.g., Elementor) by loading the login template earlier in the execution cycle.
+- **Redirect Logic**: Fixed an issue where the logout redirect would fail or loop back to the home page when using a custom login slug.
+
 ## [1.3.6] - 2026-01-13
 ### Added
 - **Security Headers**: Added HSTS (HTTP Strict Transport Security) header enforcement for improved SSL security.
