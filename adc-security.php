@@ -12,9 +12,13 @@
  * Requires PHP: 7.4
  */
 
-// Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
+}
+
+// Prevent double-loading if multiple versions exist
+if ( defined( 'ADC_SECURITY_VERSION' ) ) {
+    return;
 }
 
 // Define Plugin Constants.
