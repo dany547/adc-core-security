@@ -23,6 +23,7 @@ class ADC_Security_Settings {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_init', array( $this, 'handle_debug_export' ) );
+        add_action( 'admin_init', array( $this, 'handle_clear_logs' ) );
         // Removed global admin_head hook to prevent interference and fix warnings
 	}
 
@@ -411,8 +412,18 @@ class ADC_Security_Settings {
         if ( empty( $blocked_ips ) ) {
             $report .= "None\r\n";
         } else {
-            foreach ( $blocked_ips as $ip => $data ) {
-                $report .= "IP: $ip - Blocked until: " . date( 'Y-m-d H:i:s', $data['timestamp'] + $data['duration'] * 60 ) . "\r\n";
+            foreach ( $blocked_ips as $ip => $expiry ) {
+                $report .= "IP: $ip - Expires: " . date( 'Y-m-d H:i:s', $expiry ) . "\r\n";
+            }
+        }
+
+        $report .= "\r\n--- Error & Activity Logs ---\r\n";
+        $logs = ADC_Security_Logger::get_logs();
+        if ( empty( $logs ) ) {
+            $report .= "None recorded.\r\n";
+        } else {
+            foreach ( $logs as $log ) {
+                $report .= sprintf( "[%s] [%s] %s | URL: %s\r\n", $log['timestamp'], $log['level'], $log['message'], $log['url'] );
             }
         }
 
@@ -420,6 +431,27 @@ class ADC_Security_Settings {
         header( 'Content-Disposition: attachment; filename="adc-security-debug-report.txt"' );
         echo $report;
         exit;
+    }
+
+    /**
+     * Handle the clear logs action.
+     */
+    public function handle_clear_logs() {
+        if ( ! isset( $_POST['adc_security_action'] ) || 'clear_logs' !== $_POST['adc_security_action'] ) {
+            return;
+        }
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+
+        check_admin_referer( 'adc_security_clear_logs', 'adc_security_clear_nonce' );
+
+        ADC_Security_Logger::clear_logs();
+
+        add_action( 'admin_notices', function() {
+            echo '<div class="updated"><p>ADC Security: Logs cleared successfully.</p></div>';
+        } );
     }
 
 	/**
@@ -496,14 +528,25 @@ class ADC_Security_Settings {
                         <tr><td><strong>HTTPS</strong></td><td><?php echo is_ssl() ? 'Yes' : 'No'; ?></td></tr>
                     </table>
 
-                    <div class="adc-debug-export" style="background: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 4px;">
-                        <h3 style="margin-top:0;">Export Debug Report</h3>
-                        <p>Generate a text file containing your current site settings and system info for analysis.</p>
-                        <form method="post" action="">
-                            <?php wp_nonce_field( 'adc_security_export_debug', 'adc_security_export_nonce' ); ?>
-                            <input type="hidden" name="adc_security_action" value="export_debug">
-                            <button type="submit" class="button button-secondary">Download .txt Report</button>
-                        </form>
+                    <div class="adc-debug-export" style="background: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 4px; display: flex; gap: 20px;">
+                        <div>
+                            <h3 style="margin-top:0;">Export Debug Report</h3>
+                            <p>Generate a text file containing your current site settings, blocked IPs, and error logs.</p>
+                            <form method="post" action="">
+                                <?php wp_nonce_field( 'adc_security_export_debug', 'adc_security_export_nonce' ); ?>
+                                <input type="hidden" name="adc_security_action" value="export_debug">
+                                <button type="submit" class="button button-secondary">Download .txt Report</button>
+                            </form>
+                        </div>
+                        <div style="border-left: 1px solid #ddd; padding-left: 20px;">
+                            <h3 style="margin-top:0;">Maintenance</h3>
+                            <p>Clear all recorded error and activity logs from the database.</p>
+                            <form method="post" action="">
+                                <?php wp_nonce_field( 'adc_security_clear_logs', 'adc_security_clear_nonce' ); ?>
+                                <input type="hidden" name="adc_security_action" value="clear_logs">
+                                <button type="submit" class="button button-link-delete" onclick="return confirm('Are you sure you want to clear all logs?');">Clear Error Logs</button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             <?php elseif ( 'changelog' === $active_tab ) : ?>

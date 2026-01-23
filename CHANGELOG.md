@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.8] - 2026-01-23
+### Added
+- **Error Logging System**: Implemented a background logger that captures PHP errors, exceptions, and fatal crashes specifically related to the ADC Security plugin.
+- **Improved Debug Export**: The debug report now includes the last 50 error entries to help with technical support and troubleshooting.
+- **Log Maintenance**: Added a feature to clear recorded logs from the Support settings tab.
+
 ## [1.3.7] - 2026-01-22
 ### Fixed
 - **Custom Login URL**: Improved compatibility with maintenance mode plugins (e.g., Elementor) by loading the login template earlier in the execution cycle.

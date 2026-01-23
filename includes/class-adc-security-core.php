@@ -24,6 +24,13 @@ class ADC_Security_Core {
 	 * @var ADC_Security_Settings
 	 */
 	public $settings;
+    
+	/**
+	 * Logger instance.
+	 * 
+	 * @var ADC_Security_Logger
+	 */
+	public $logger;
 
 	/**
 	 * Login instance.
@@ -93,12 +100,14 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-hardening.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-captcha.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-updater.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-logger.php';
 	}
 
 	/**
 	 * Instantiate classes.
 	 */
 	private function instantiate() {
+        $this->logger    = new ADC_Security_Logger();
 		$this->settings  = new ADC_Security_Settings();
 		$this->login     = new ADC_Security_Login();
 		$this->hardening = new ADC_Security_Hardening();
