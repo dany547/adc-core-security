@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.5.1] - 2026-07-20
+### Fixed
+- **Automatic Updates**: Release packages now use the stable `adc-security/` plugin directory, preventing GitHub source archive folder names from breaking WordPress updates.
+
 ## [1.5.0] - 2026-07-20
 ### Security
 - **Math Captcha (CRITICAL)**: Rewrote math captcha to use server-side transient storage. The answer hash is no longer exposed in the page source — an attacker can no longer brute-force the captcha in 18 attempts.
