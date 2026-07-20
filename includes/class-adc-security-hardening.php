@@ -166,9 +166,22 @@ class ADC_Security_Hardening {
 			header( 'X-Frame-Options: SAMEORIGIN' );
 			header( 'X-XSS-Protection: 1; mode=block' );
 			header( 'Referrer-Policy: strict-origin-when-cross-origin' );
-			header( "Content-Security-Policy: default-src 'self' https: data: 'unsafe-inline' 'unsafe-eval';" );
+
+			// CSP: use admin-configured value or a secure restrictive default.
+			$custom_csp = isset( $this->options['security_headers_csp'] ) ? $this->options['security_headers_csp'] : '';
+			if ( ! empty( $custom_csp ) ) {
+				header( 'Content-Security-Policy: ' . $custom_csp );
+			} else {
+				// Secure default: no unsafe-inline, no unsafe-eval.
+				header( "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'self';" );
+			}
+
 			header( 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()' );
-			header( 'Strict-Transport-Security: max-age=31536000; includeSubDomains' );
+
+			// HSTS: only send when HTTPS is active to avoid issues on HTTP-only sites.
+			if ( is_ssl() ) {
+				header( 'Strict-Transport-Security: max-age=31536000; includeSubDomains' );
+			}
 		});
 	}
 
@@ -221,7 +234,7 @@ class ADC_Security_Hardening {
 			return $result;
 		}
 
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
 
 		if ( ! preg_match( '#/wp-json/wp/v2/users(/\d+)?#i', $request_uri ) ) {
 			return $result;

@@ -306,12 +306,24 @@ class ADC_Security_Settings {
                     <li><strong>X-Frame-Options:</strong> SAMEORIGIN (Prevents clickjacking)</li>
                     <li><strong>X-XSS-Protection:</strong> 1; mode=block (Enables XSS filtering)</li>
                     <li><strong>Referrer-Policy:</strong> strict-origin-when-cross-origin (Controls referrer info)</li>
-                    <li><strong>Content-Security-Policy:</strong> Safe defaults (Protects against XSS)</li>
+                    <li><strong>Content-Security-Policy:</strong> Configurable via the field below</li>
                     <li><strong>Permissions-Policy:</strong> Disables sensitive features (Camera, Mic, etc.)</li>
-                    <li><strong>Strict-Transport-Security:</strong> max-age=31536000; includeSubDomains (Enforces HTTPS)</li>
+                    <li><strong>Strict-Transport-Security:</strong> Sent only when HTTPS is active (Enforces HTTPS)</li>
                 </ul>',
 			)
 		);
+
+        add_settings_field(
+            'security_headers_csp',
+            'Content-Security-Policy',
+            array( $this, 'render_textarea_field' ),
+            'adc_security_hardening',
+            'adc_security_hardening_section',
+            array(
+                'label_for' => 'security_headers_csp',
+                'description' => 'Custom Content-Security-Policy header value. Leave empty for a secure default. Only applies when "Enable Security Headers" is checked. Remove <code>\'unsafe-inline\'</code> and <code>\'unsafe-eval\'</code> for maximum XSS protection.',
+            )
+        );
 
         add_settings_field(
             'prevent_user_enumeration',
@@ -335,13 +347,13 @@ class ADC_Security_Settings {
 
         add_settings_field(
             'auto_update_plugins',
-            'Plugin Updates',
+            'Plugin Updates (Site-Wide)',
             array( $this, 'render_select_field' ),
             'adc_security_hardening',
             'adc_security_updates_section',
             array(
                 'label_for' => 'auto_update_plugins',
-                'description' => 'Control automatic updates for all plugins.',
+                'description' => 'Controls automatic updates for ALL plugins on this site, not just ADC Security.',
                 'options' => array(
                     'default' => 'Default (Manual)',
                     'enable'  => 'Enable All',
@@ -352,13 +364,13 @@ class ADC_Security_Settings {
 
         add_settings_field(
             'auto_update_themes',
-            'Theme Updates',
+            'Theme Updates (Site-Wide)',
             array( $this, 'render_select_field' ),
             'adc_security_hardening',
             'adc_security_updates_section',
             array(
                 'label_for' => 'auto_update_themes',
-                'description' => 'Control automatic updates for all themes.',
+                'description' => 'Controls automatic updates for ALL themes on this site.',
                 'options' => array(
                     'default' => 'Default (Manual)',
                     'enable'  => 'Enable All',
@@ -597,10 +609,10 @@ class ADC_Security_Settings {
                     <p>Use the information below for troubleshooting or when contacting support.</p>
                     
                     <table class="widefat striped" style="margin-bottom: 20px; max-width: 600px;">
-                        <tr><td><strong>WordPress Version</strong></td><td><?php echo get_bloginfo( 'version' ); ?></td></tr>
-                        <tr><td><strong>PHP Version</strong></td><td><?php echo phpversion(); ?></td></tr>
-                        <tr><td><strong>Plugin Version</strong></td><td><?php echo ADC_SECURITY_VERSION; ?></td></tr>
-                        <tr><td><strong>Active Theme</strong></td><td><?php echo wp_get_theme()->get( 'Name' ); ?></td></tr>
+                        <tr><td><strong>WordPress Version</strong></td><td><?php echo esc_html( get_bloginfo( 'version' ) ); ?></td></tr>
+                        <tr><td><strong>PHP Version</strong></td><td><?php echo esc_html( phpversion() ); ?></td></tr>
+                        <tr><td><strong>Plugin Version</strong></td><td><?php echo esc_html( ADC_SECURITY_VERSION ); ?></td></tr>
+                        <tr><td><strong>Active Theme</strong></td><td><?php echo esc_html( wp_get_theme()->get( 'Name' ) ); ?></td></tr>
                         <tr><td><strong>Web Server</strong></td><td><?php echo isset( $_SERVER['SERVER_SOFTWARE'] ) ? esc_html( $_SERVER['SERVER_SOFTWARE'] ) : 'Unknown'; ?></td></tr>
                         <tr><td><strong>HTTPS</strong></td><td><?php echo is_ssl() ? 'Yes' : 'No'; ?></td></tr>
                     </table>
@@ -727,6 +739,11 @@ class ADC_Security_Settings {
 			if ( isset( $input[ $key ] ) ) {
 				$new_input[ $key ] = $input[ $key ] ? 1 : 0;
 			}
+		}
+
+		// CSP header: sanitize as raw header value (no HTML, no newlines).
+		if ( isset( $input['security_headers_csp'] ) ) {
+			$new_input['security_headers_csp'] = sanitize_text_field( wp_unslash( $input['security_headers_csp'] ) );
 		}
 
 		// Admin session expiration days: 1..30, default 7

@@ -21,26 +21,43 @@ class ADC_Security_Logger {
      */
     const MAX_ENTRIES = 50;
 
-	/**
-	 * Constructor.
-	 */
+    /**
+     * Previous error handler, if any.
+     *
+     * @var callable|false
+     */
+    private $previous_error_handler = false;
+
+    /**
+     * Constructor.
+     */
 	public function __construct() {
-        // Register error handlers to capture plugin-specific issues
-        set_error_handler( array( $this, 'handle_error' ) );
+        // Chain to any previously registered error handler instead of replacing it.
+        $this->previous_error_handler = set_error_handler( array( $this, 'handle_error' ) );
+
         set_exception_handler( array( $this, 'handle_exception' ) );
-        register_shutdown_function( array( $this, 'handle_fatal' ) );
+
+        // Only register the shutdown function once per process.
+        static $shutdown_registered = false;
+        if ( ! $shutdown_registered ) {
+            register_shutdown_function( array( $this, 'handle_fatal' ) );
+            $shutdown_registered = true;
+        }
 	}
 
     /**
      * Handle PHP Errors
      */
     public function handle_error( $errno, $errstr, $errfile, $errline ) {
-        // Only care about our own plugin or if it's a critical error
         if ( strpos( $errfile, 'adc-security' ) !== false ) {
             $this->log( sprintf( 'PHP Error [%d]: %s in %s on line %d', $errno, $errstr, $errfile, $errline ), 'ERROR' );
         }
         
-        // Return false to let the standard PHP error handler continue
+        // Chain to the previously registered error handler if one exists.
+        if ( $this->previous_error_handler && is_callable( $this->previous_error_handler ) ) {
+            return call_user_func( $this->previous_error_handler, $errno, $errstr, $errfile, $errline );
+        }
+
         return false;
     }
 
@@ -78,7 +95,7 @@ class ADC_Security_Logger {
             'timestamp' => current_time( 'mysql' ),
             'level'     => $level,
             'message'   => $message,
-            'url'       => isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : 'CLI',
+            'url'       => isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : 'CLI',
         );
 
         array_unshift( $logs, $entry );

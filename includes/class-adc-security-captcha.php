@@ -74,34 +74,34 @@ class ADC_Security_Captcha {
         $num2 = rand( 1, 9 );
         $sum  = $num1 + $num2;
 
-        // Store sum in a session-like transient based on IP (or cookie if possible, but transient is simpler for now without session start)
-        // Better: Encrypt the sum in a hidden field.
-        $salt = wp_salt();
-        $hash = hash_hmac( 'sha256', $sum, $salt );
+        // Store the answer server-side in a transient keyed by a random token.
+        // The client only receives the token, never the answer or a derivable hash.
+        $token = wp_generate_password( 32, false );
+        set_transient( 'adc_math_captcha_' . $token, $sum, 5 * MINUTE_IN_SECONDS );
 
         echo '<p class="adc-math-captcha">
             <label for="adc_math_captcha">Security Question: ' . $num1 . ' + ' . $num2 . ' = ?</label>
             <input type="number" name="adc_math_captcha" id="adc_math_captcha" class="input" value="" size="20" required />
-            <input type="hidden" name="adc_math_hash" value="' . esc_attr( $hash ) . '" />
+            <input type="hidden" name="adc_math_token" value="' . esc_attr( $token ) . '" />
         </p>';
     }
 
     public function validate_math_captcha( $user, $username, $password ) {
-        if ( isset( $_POST['adc_math_captcha'] ) && isset( $_POST['adc_math_hash'] ) ) {
+        if ( isset( $_POST['adc_math_captcha'] ) && isset( $_POST['adc_math_token'] ) ) {
+            $token  = sanitize_text_field( wp_unslash( $_POST['adc_math_token'] ) );
             $answer = (int) $_POST['adc_math_captcha'];
-            $hash   = $_POST['adc_math_hash'];
-            $salt   = wp_salt();
-            
-            $check_hash = hash_hmac( 'sha256', $answer, $salt );
+            $transient_key = 'adc_math_captcha_' . $token;
 
-            if ( ! hash_equals( $hash, $check_hash ) ) {
+            $expected = get_transient( $transient_key );
+
+            // Delete the transient regardless of outcome (one-time use).
+            delete_transient( $transient_key );
+
+            if ( false === $expected || $answer !== (int) $expected ) {
                 return new WP_Error( 'captcha_error', '<strong>Error</strong>: Incorrect CAPTCHA answer.' );
             }
         } else {
-             // If fields are missing but we are in math mode, it might be an issue or direct post. 
-             // Normally login form submission should have it.
-             // We return error to enforce it.
-             if ( isset( $_POST['log'] ) ) { // Only check if it's a login attempt
+             if ( isset( $_POST['log'] ) ) {
                 return new WP_Error( 'captcha_error', '<strong>Error</strong>: Please solve the CAPTCHA.' );
              }
         }

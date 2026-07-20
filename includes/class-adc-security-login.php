@@ -349,7 +349,7 @@ class ADC_Security_Login {
 			return;
 		}
 
-		$request_uri = $_SERVER['REQUEST_URI'];
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '/';
 		$home_path   = parse_url( home_url(), PHP_URL_PATH );
 
 		if ( $home_path && '/' !== $home_path ) {
@@ -429,7 +429,8 @@ class ADC_Security_Login {
 	}
 
 	public function block_wp_login() {
-		if ( strpos( $_SERVER['REQUEST_URI'], 'wp-login.php' ) !== false && ! isset( $_REQUEST['adc_login'] ) ) {
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+		if ( strpos( $request_uri, 'wp-login.php' ) !== false && ! isset( $_REQUEST['adc_login'] ) ) {
 			if ( defined( 'DOING_AJAX' ) || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) ) {
 				return;
 			}
@@ -441,7 +442,8 @@ class ADC_Security_Login {
 
 	public function block_wp_admin() {
 		if ( is_admin() && ! is_user_logged_in() && ! defined( 'DOING_AJAX' ) ) {
-			if ( strpos( $_SERVER['REQUEST_URI'], 'admin-post.php' ) !== false ) {
+			$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+			if ( strpos( $request_uri, 'admin-post.php' ) !== false ) {
 				return;
 			}
 
