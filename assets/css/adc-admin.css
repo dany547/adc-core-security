@@ -1,0 +1,41 @@
+.adc-settings-header {
+    background: #fff;
+    padding: 20px;
+    margin: 0 0 20px 0;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+    border: 1px solid #ccd0d4;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.adc-logo {
+    width: 60px;
+    height: 60px;
+    max-width: 60px;
+    flex-shrink: 0;
+}
+
+.adc-header-title h1 {
+    margin: 0;
+    padding: 0;
+    line-height: 1.2;
+}
+
+.adc-header-title p {
+    margin: 5px 0 0 0;
+    color: #666;
+}
+
+.adc-overview-content {
+    background: #fff;
+    padding: 30px;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+    max-width: 800px;
+    margin-top: 20px;
+}
+
+.adc-overview-content h2 {
+    margin-top: 0;
+}
