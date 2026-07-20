@@ -1,0 +1,26 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Build WordPress plugin archive
+        run: git archive --format=zip --prefix=adc-security/ --output=adc-security.zip HEAD
+
+      - name: Publish release archive
+        uses: softprops/action-gh-release@v2
+        with:
+          files: adc-security.zip
+          generate_release_notes: true

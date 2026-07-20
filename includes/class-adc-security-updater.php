@@ -182,19 +182,27 @@ class ADC_Security_Updater {
 	}
 
 	/**
-	 * Build the zip download URL for a release.
+	 * Get the WordPress plugin archive from a release.
 	 *
-	 * Uses the GitHub auto-generated source archive (no manual upload needed).
+	 * GitHub's generated source archives use a repository-and-tag directory
+	 * name, which does not match this plugin's installed directory. Releases
+	 * must therefore include an adc-security.zip asset rooted at adc-security/.
 	 *
 	 * @param object $release GitHub release object.
 	 * @return string|false
 	 */
 	private function find_zip_asset( $release ) {
-		if ( empty( $release->tag_name ) ) {
+		if ( empty( $release->assets ) || ! is_array( $release->assets ) ) {
 			return false;
 		}
 
-		return 'https://github.com/' . ADC_SECURITY_GITHUB_REPO . '/archive/refs/tags/' . rawurlencode( $release->tag_name ) . '.zip';
+		foreach ( $release->assets as $asset ) {
+			if ( isset( $asset->name, $asset->browser_download_url ) && 'adc-security.zip' === $asset->name ) {
+				return $asset->browser_download_url;
+			}
+		}
+
+		return false;
 	}
 
 	/**
