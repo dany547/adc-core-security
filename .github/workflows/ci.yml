@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  php-lint:
+    name: PHP Syntax (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: none
+
+      - name: Lint all PHP files
+        run: |
+          errors=0
+          for file in $(find . -name '*.php' -not -path './vendor/*'); do
+            if ! php -l "$file" > /dev/null 2>&1; then
+              php -l "$file"
+              errors=$((errors + 1))
+            fi
+          done
+          if [ "$errors" -gt 0 ]; then
+            echo "::error::$errors file(s) failed syntax check"
+            exit 1
+          fi
+          echo "All PHP files passed syntax check."
+
+  version-check:
+    name: Version Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version consistency
+        run: |
+          HEADER_VERSION=$(grep -oP 'Version:\s*\K[0-9]+\.[0-9]+\.[0-9]+' adc-security.php)
+          CONSTANT_VERSION=$(grep -oP "define\(\s*'ADC_SECURITY_VERSION',\s*'\K[0-9]+\.[0-9]+\.[0-9]+" adc-security.php)
+          CHANGELOG_VERSION=$(grep -oP '## \[\K[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | head -1)
+
+          echo "Plugin header: $HEADER_VERSION"
+          echo "PHP constant:  $CONSTANT_VERSION"
+          echo "Changelog:     $CHANGELOG_VERSION"
+
+          if [ "$HEADER_VERSION" != "$CONSTANT_VERSION" ]; then
+            echo "::error::Version mismatch: header ($HEADER_VERSION) != constant ($CONSTANT_VERSION)"
+            exit 1
+          fi
+
+          if [ "$HEADER_VERSION" != "$CHANGELOG_VERSION" ]; then
+            echo "::warning::Changelog latest entry ($CHANGELOG_VERSION) differs from plugin version ($HEADER_VERSION)"
+          fi
+
+          echo "Versions are consistent."
+
+  plugin-check:
+    name: Plugin Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify required files exist
+        run: |
+          required_files=(
+            "adc-security.php"
+            "CHANGELOG.md"
+            "LICENSE"
+            "includes/class-adc-security-core.php"
+            "includes/class-adc-security-settings.php"
+            "includes/class-adc-security-login.php"
+            "includes/class-adc-security-hardening.php"
+            "includes/class-adc-security-captcha.php"
+            "includes/class-adc-security-logger.php"
+            "includes/class-adc-security-updater.php"
+          )
+          missing=0
+          for file in "${required_files[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "::error file=$file::Missing required file: $file"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            exit 1
+          fi
+          echo "All required plugin files present."
+
+      - name: Check ABSPATH guards
+        run: |
+          guard_count=$(grep -rl "if ( ! defined( 'ABSPATH' )" includes/ | wc -l)
+          total_files=$(find includes/ -name '*.php' | wc -l)
+          echo "ABSPATH guard found in $guard_count / $total_files include files."
+          if [ "$guard_count" -ne "$total_files" ]; then
+            echo "::warning::Some include files may be missing the ABSPATH direct-access guard."
+          fi
