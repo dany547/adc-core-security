@@ -2,6 +2,8 @@
 /**
  * ADC Security Updater Class
  *
+ * Pulls update information from GitHub Releases.
+ *
  * @package ADCSecurity
  */
 
@@ -12,115 +14,221 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ADC_Security_Updater {
 
 	/**
+	 * GitHub API response cache.
+	 *
+	 * @var object|false
+	 */
+	private $release = false;
+
+	/**
 	 * Constructor.
 	 */
 	public function __construct() {
-        // Hook into the transient for updates
-        add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'check_update' ) );
-        
-        // Hook into plugin details popup
-        add_filter( 'plugins_api', array( $this, 'check_info' ), 10, 3 );
+		add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'check_update' ) );
+		add_filter( 'plugins_api', array( $this, 'check_info' ), 10, 3 );
 	}
 
-    /**
-     * Check for Updates
-     * 
-     * @param object $transient Plugin update transient.
-     * @return object
-     */
-    public function check_update( $transient ) {
-        if ( empty( $transient->checked ) ) {
-            return $transient;
-        }
+	/**
+	 * Inject update data into the plugins transient.
+	 *
+	 * @param object $transient Plugin update transient.
+	 * @return object
+	 */
+	public function check_update( $transient ) {
+		if ( empty( $transient->checked ) ) {
+			return $transient;
+		}
 
-        // Get remote version
-        $remote_version = $this->get_remote_version();
+		$release = $this->get_latest_release();
 
-        if ( $remote_version && version_compare( ADC_SECURITY_VERSION, $remote_version->version, '<' ) ) {
-            $res = new stdClass();
-            $res->slug = 'adc-security';
-            $res->plugin = plugin_basename( ADC_SECURITY_FILE );
-            $res->new_version = $remote_version->version;
-            $res->package = $remote_version->download_url;
-            $res->tested = isset( $remote_version->tested ) ? $remote_version->tested : '';
-            $res->requires = isset( $remote_version->requires ) ? $remote_version->requires : '';
-            $res->requires_php = isset( $remote_version->requires_php ) ? $remote_version->requires_php : '';
-            
-            $transient->response[ $res->plugin ] = $res;
-        }
+		if ( ! $release ) {
+			return $transient;
+		}
 
-        return $transient;
-    }
+		$remote_version = $this->parse_version( $release->tag_name );
 
-    /**
-     * Plugin Information Popup
-     * 
-     * @param false|object $result The result object or false.
-     * @param string       $action The API action.
-     * @param object       $args   The API arguments.
-     * @return false|object
-     */
-    public function check_info( $result, $action, $args ) {
-        if ( 'plugin_information' !== $action ) {
-            return $result;
-        }
+		if ( ! $remote_version ) {
+			return $transient;
+		}
 
-        if ( 'adc-security' !== $args->slug ) {
-            return $result;
-        }
+		if ( version_compare( ADC_SECURITY_VERSION, $remote_version, '<' ) ) {
+			$download_url = $this->find_zip_asset( $release );
 
-        $remote_version = $this->get_remote_version();
+			if ( ! $download_url ) {
+				return $transient;
+			}
 
-        if ( $remote_version ) {
-            $res = new stdClass();
-            $res->name = 'ADcelerum Core Security';
-            $res->slug = 'adc-security';
-            $res->version = $remote_version->version;
-            $res->tested = isset( $remote_version->tested ) ? $remote_version->tested : '';
-            $res->requires = isset( $remote_version->requires ) ? $remote_version->requires : '';
-            $res->author = 'Dan Mutu - adcelerum.ro';
-            $res->author_profile = 'https://adcelerum.ro';
-            $res->download_link = $remote_version->download_url;
-            $res->trunk = $remote_version->download_url;
-            $res->requires_php = isset( $remote_version->requires_php ) ? $remote_version->requires_php : '';
-            $res->last_updated = isset( $remote_version->last_updated ) ? $remote_version->last_updated : '';
-            
-            if ( isset( $remote_version->sections ) ) {
-                $res->sections = (array) $remote_version->sections;
-            }
+			$res                = new stdClass();
+			$res->slug          = 'adc-security';
+			$res->plugin        = plugin_basename( ADC_SECURITY_FILE );
+			$res->new_version   = $remote_version;
+			$res->package       = $download_url;
+			$res->tested        = $this->get_wp_tested_version( $release );
+			$res->requires      = '5.8';
+			$res->requires_php  = '7.4';
 
-            return $res;
-        }
+			$transient->response[ $res->plugin ] = $res;
+		}
 
-        return $result;
-    }
+		return $transient;
+	}
 
-    /**
-     * Get Remote Version
-     * 
-     * @return object|bool
-     */
-    private function get_remote_version() {
-        if ( ! defined( 'ADC_SECURITY_UPDATE_URL' ) ) {
-            return false;
-        }
+	/**
+	 * Provide plugin info for the "View version details" popup.
+	 *
+	 * @param false|object $result Existing result or false.
+	 * @param string       $action API action.
+	 * @param object       $args   API arguments.
+	 * @return false|object
+	 */
+	public function check_info( $result, $action, $args ) {
+		if ( 'plugin_information' !== $action ) {
+			return $result;
+		}
 
-        $request = wp_remote_get( ADC_SECURITY_UPDATE_URL, array(
-            'timeout' => 15,
-            'sslverify' => true
-        ) );
+		if ( 'adc-security' !== $args->slug ) {
+			return $result;
+		}
 
-        if ( is_wp_error( $request ) || wp_remote_retrieve_response_code( $request ) !== 200 ) {
-            return false;
-        }
+		$release = $this->get_latest_release();
 
-        $body = wp_remote_retrieve_body( $request );
-        $data = json_decode( $body );
+		if ( ! $release ) {
+			return $result;
+		}
 
-        if ( ! is_object( $data ) || ! isset( $data->version ) || ! isset( $data->download_url ) ) {
-            return false;
-        }
+		$remote_version = $this->parse_version( $release->tag_name );
+		$download_url   = $this->find_zip_asset( $release );
 
-        return $data;
-    }
+		if ( ! $remote_version || ! $download_url ) {
+			return $result;
+		}
+
+		$res                 = new stdClass();
+		$res->name           = 'ADcelerum Core Security';
+		$res->slug           = 'adc-security';
+		$res->version        = $remote_version;
+		$res->author         = 'Dan Mutu - adcelerum.ro';
+		$res->author_profile = 'https://adcelerum.ro';
+		$res->requires       = '5.8';
+		$res->requires_php   = '7.4';
+		$res->download_link  = $download_url;
+		$res->trunk          = $download_url;
+		$res->last_updated   = isset( $release->published_at ) ? $release->published_at : '';
+		$res->tested         = $this->get_wp_tested_version( $release );
+
+		$res->sections = array(
+			'description'  => $this->get_release_body_html( $release ),
+			'changelog'    => $this->get_release_body_html( $release ),
+		);
+
+		return $res;
+	}
+
+	/**
+	 * Fetch and cache the latest GitHub release.
+	 *
+	 * @return object|false
+	 */
+	private function get_latest_release() {
+		if ( false !== $this->release ) {
+			return $this->release;
+		}
+
+		if ( ! defined( 'ADC_SECURITY_UPDATE_URL' ) ) {
+			$this->release = false;
+			return false;
+		}
+
+		$request = wp_remote_get( ADC_SECURITY_UPDATE_URL, array(
+			'timeout'    => 15,
+			'sslverify'  => true,
+			'user-agent' => 'ADC-Security-Plugin/' . ADC_SECURITY_VERSION,
+			'headers'    => array(
+				'Accept' => 'application/vnd.github.v3+json',
+			),
+		) );
+
+		if ( is_wp_error( $request ) || wp_remote_retrieve_response_code( $request ) !== 200 ) {
+			$this->release = false;
+			return false;
+		}
+
+		$body  = wp_remote_retrieve_body( $request );
+		$release = json_decode( $body );
+
+		if ( ! is_object( $release ) || ! isset( $release->tag_name ) ) {
+			$this->release = false;
+			return false;
+		}
+
+		$this->release = $release;
+		return $this->release;
+	}
+
+	/**
+	 * Strip a leading "v" from a tag name and return the semver string.
+	 *
+	 * @param string $tag_name e.g. "v1.4.0".
+	 * @return string|false
+	 */
+	private function parse_version( $tag_name ) {
+		$version = preg_replace( '/^v/i', '', trim( $tag_name ) );
+
+		if ( preg_match( '/^\d+\.\d+\.\d+/', $version ) ) {
+			return $version;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Build the zip download URL for a release.
+	 *
+	 * Uses the GitHub auto-generated source archive (no manual upload needed).
+	 *
+	 * @param object $release GitHub release object.
+	 * @return string|false
+	 */
+	private function find_zip_asset( $release ) {
+		if ( empty( $release->tag_name ) ) {
+			return false;
+		}
+
+		return 'https://github.com/' . ADC_SECURITY_GITHUB_REPO . '/archive/refs/tags/' . rawurlencode( $release->tag_name ) . '.zip';
+	}
+
+	/**
+	 * Extract the WP "Tested up to" version from the release body.
+	 *
+	 * Looks for patterns like "Tested up to: 6.7" or "Tested: 6.7".
+	 *
+	 * @param object $release GitHub release object.
+	 * @return string
+	 */
+	private function get_wp_tested_version( $release ) {
+		$body = isset( $release->body ) ? $release->body : '';
+
+		if ( preg_match( '/Tested\s+(?:up\s+to)?\s*:?\s*(\d+\.\d+(?:\.\d+)?)/i', $body, $m ) ) {
+			return $m[1];
+		}
+
+		return '';
+	}
+
+	/**
+	 * Convert Markdown release body to basic HTML for the details popup.
+	 *
+	 * @param object $release GitHub release object.
+	 * @return string
+	 */
+	private function get_release_body_html( $release ) {
+		$body = isset( $release->body ) ? $release->body : '';
+
+		if ( '' === $body ) {
+			return '<p>No release notes available.</p>';
+		}
+
+		$html = wp_kses_post( nl2br( esc_html( $body ) ) );
+		return $html;
+	}
 }
