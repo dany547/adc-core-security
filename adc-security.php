@@ -3,7 +3,7 @@
  * Plugin Name: ADC Core Security
  * Plugin URI:  https://adcelerum.ro
  * Description: Simple WordPress security plugin to prevent brute force, restrict access, and harden security.
- * Version:     1.4.0
+ * Version:     1.4.1
  * Author:      Dan Mutu - adcelerum.ro
  * Author URI:  https://adcelerum.ro
  * License:     GPL-2.0+
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Define Plugin Constants.
-define( 'ADC_SECURITY_VERSION', '1.4.0' );
+define( 'ADC_SECURITY_VERSION', '1.4.1' );
 define( 'ADC_SECURITY_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ADC_SECURITY_URL', plugin_dir_url( __FILE__ ) );
 define( 'ADC_SECURITY_FILE', __FILE__ );

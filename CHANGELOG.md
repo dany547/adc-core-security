@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.1] - 2026-07-20
+### Changed
+- **Updater**: Switched automatic updates from custom Cloudflare endpoint to GitHub Releases API. No manual upload needed — GitHub auto-generated source archives are used.
+- **README**: Updated feature list and documentation for v1.4.0 additions.
+
 ## [1.4.0] - 2026-07-20
 ### Added
 - **Admin Login Notification**: Email alert when an administrator logs in successfully, including user, time, IP, and user agent.
