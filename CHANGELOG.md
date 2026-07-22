@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.0] - 2026-07-22
+### Changed
+- **Content-Security-Policy**: Updated the default policy for WordPress page-builder compatibility by allowing inline configuration scripts and data fonts while keeping `unsafe-eval` disabled.
+- **Cloudflare Turnstile**: Added the required Cloudflare origin to the default CSP and removed an unused inline script from the login integration.
+
 ## [1.5.1] - 2026-07-20
 ### Fixed
 - **Automatic Updates**: Release packages now use the stable `adc-security/` plugin directory, preventing GitHub source archive folder names from breaking WordPress updates.

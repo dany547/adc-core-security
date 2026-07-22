@@ -127,9 +127,6 @@ class ADC_Security_Captcha {
             return;
         }
         echo '<div class="cf-turnstile" data-sitekey="' . esc_attr( $site_key ) . '" data-theme="light"></div>';
-        echo '<script>
-            // Ensure container exists logic if needed, but login_form action usually places it well.
-        </script>';
     }
 
     public function validate_turnstile( $user, $username, $password ) {
