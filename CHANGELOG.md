@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.6.1] - 2026-07-22
+### Fixed
+- **Content-Security-Policy**: Added the specific Google Fonts and Google Tag Manager origins required by the live site, plus Google Analytics endpoints for telemetry requests.
+
 ## [1.6.0] - 2026-07-22
 ### Changed
 - **Content-Security-Policy**: Updated the default policy for WordPress page-builder compatibility by allowing inline configuration scripts and data fonts while keeping `unsafe-eval` disabled.

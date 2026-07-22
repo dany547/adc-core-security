@@ -174,7 +174,7 @@ class ADC_Security_Hardening {
 			} else {
 				// Balanced default: WordPress page builders need inline configuration scripts.
 				// Keep eval disabled and limit the external Turnstile origin explicitly.
-				header( "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://challenges.cloudflare.com; frame-src 'self' https://challenges.cloudflare.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';" );
+				header( "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://challenges.cloudflare.com https://www.google-analytics.com https://analytics.google.com; frame-src 'self' https://challenges.cloudflare.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';" );
 			}
 
 			header( 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()' );
