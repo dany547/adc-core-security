@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.6.2] - 2026-07-23
+### Fixed
+- **Content-Security-Policy**: Allow HTTPS XHR/fetch requests for third-party integrations and Google Ads script loading.
+
 ## [1.6.1] - 2026-07-22
 ### Fixed
 - **Content-Security-Policy**: Added the specific Google Fonts and Google Tag Manager origins required by the live site, plus Google Analytics endpoints for telemetry requests.

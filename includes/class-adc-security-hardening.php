@@ -173,8 +173,9 @@ class ADC_Security_Hardening {
 				header( 'Content-Security-Policy: ' . $custom_csp );
 			} else {
 				// Balanced default: WordPress page builders need inline configuration scripts.
-				// Keep eval disabled and limit the external Turnstile origin explicitly.
-				header( "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://challenges.cloudflare.com https://www.google-analytics.com https://analytics.google.com; frame-src 'self' https://challenges.cloudflare.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';" );
+				// Keep eval disabled, allow HTTPS XHR/fetch for third-party integrations,
+				// and limit external executable resources to known origins.
+				header( "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com https://googleads.g.doubleclick.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src 'self' https://challenges.cloudflare.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';" );
 			}
 
 			header( 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()' );

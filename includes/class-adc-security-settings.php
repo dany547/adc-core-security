@@ -321,7 +321,7 @@ class ADC_Security_Settings {
             'adc_security_hardening_section',
             array(
                 'label_for' => 'security_headers_csp',
-                'description' => 'Custom Content-Security-Policy header value. Leave empty for the WordPress-compatible default, which allows inline configuration scripts and data fonts used by page builders. Only applies when "Enable Security Headers" is checked. Existing custom values override the default; keep <code>\'unsafe-eval\'</code> disabled unless a specific plugin requires it.',
+                'description' => 'Custom Content-Security-Policy header value. Leave empty for the WordPress-compatible default, which allows inline configuration scripts, data fonts, and HTTPS XHR/fetch requests used by page builders and integrations. Only applies when "Enable Security Headers" is checked. Existing custom values override the default; keep <code>\'unsafe-eval\'</code> disabled unless a specific plugin requires it.',
             )
         );
 
