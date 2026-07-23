@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1] - 2026-07-23
+### Added
+- **Fine-tunable Security Headers**: Added fixed allowlist toggles for CSP, HSTS, framing, MIME sniffing, referrer policy, permissions policy, and legacy XSS protection.
+
+### Fixed
+- **WooCommerce Compatibility**: Content-Security-Policy can now be disabled independently when frontend variation templates require dynamic JavaScript evaluation.
+
 ## [1.7.0] - 2026-07-23
 ### Added
 - **Fixed .htaccess Rules**: Added explicit, reversible Apache/LiteSpeed rules for XML-RPC, sensitive files, and PHP execution in uploads without accepting custom directives.

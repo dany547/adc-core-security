@@ -118,9 +118,10 @@ class ADC_Security_Core {
             'ip_denylist'                      => '',
             'prevent_user_enumeration'         => 0,
             'admin_session_expiration_enabled' => 0,
-            'admin_session_expiration_days'    => 7,
+			'admin_session_expiration_days'    => 7,
 			'htaccess_rules'                    => array(),
 			'csp_dynamic_scripts_compatibility' => 0,
+			'security_header_toggles'            => array_keys( ADC_Security_Hardening::get_security_header_definitions() ),
         );
 
         $changed = false;

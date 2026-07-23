@@ -348,6 +348,18 @@ class ADC_Security_Settings {
         );
 
 		add_settings_field(
+			'security_header_toggles',
+			'Fine-tune Security Headers',
+			array( $this, 'render_security_header_toggles_field' ),
+			'adc_security_hardening',
+			'adc_security_hardening_section',
+			array(
+				'label_for'   => 'security_header_toggles',
+				'description' => 'Choose which fixed headers are emitted when Enable Security Headers is active. CSP can be disabled independently when a theme or plugin requires dynamic JavaScript templates.',
+			)
+		);
+
+		add_settings_field(
 			'csp_dynamic_scripts_compatibility',
 			'Frontend Dynamic Script Compatibility',
 			array( $this, 'render_checkbox_field' ),
@@ -845,6 +857,11 @@ class ADC_Security_Settings {
 			$new_input['htaccess_rules'] = array_values( array_intersect( ADC_Security_Htaccess::get_rule_keys(), $selected_rules ) );
 		}
 
+		if ( isset( $input['security_header_toggles'] ) && is_array( $input['security_header_toggles'] ) ) {
+			$selected_headers = array_values( array_unique( array_filter( array_map( 'sanitize_key', array_filter( $input['security_header_toggles'], 'is_string' ) ) ) ) );
+			$new_input['security_header_toggles'] = array_values( array_intersect( array_keys( ADC_Security_Hardening::get_security_header_definitions() ), $selected_headers ) );
+		}
+
 		// CSP header: sanitize as raw header value (no HTML, no newlines).
 		if ( isset( $input['security_headers_csp'] ) ) {
 			$new_input['security_headers_csp'] = sanitize_text_field( wp_unslash( $input['security_headers_csp'] ) );
@@ -921,6 +938,28 @@ class ADC_Security_Settings {
 			</label>
 		<?php endforeach; ?>
 		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?> Rules are saved first; they are not active until you explicitly apply them below.</p>
+		<?php
+	}
+
+	/**
+	 * Render the fixed security header allowlist.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_security_header_toggles_field( $args ) {
+		$options  = get_option( self::OPTION_NAME, array() );
+		$selected = isset( $options['security_header_toggles'] ) && is_array( $options['security_header_toggles'] ) ? $options['security_header_toggles'] : array_keys( ADC_Security_Hardening::get_security_header_definitions() );
+		$selected = array_map( 'sanitize_key', array_filter( $selected, 'is_string' ) );
+		?>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[security_header_toggles][]' ); ?>" value="">
+		<?php foreach ( ADC_Security_Hardening::get_security_header_definitions() as $key => $definition ) : ?>
+			<label style="display:block; margin:0 0 10px 0;">
+				<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[security_header_toggles][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>>
+				<strong><?php echo esc_html( $definition['label'] ); ?></strong>
+				<br><span class="description" style="margin-left:24px;"><?php echo esc_html( $definition['description'] ); ?></span>
+			</label>
+		<?php endforeach; ?>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
 		<?php
 	}
 

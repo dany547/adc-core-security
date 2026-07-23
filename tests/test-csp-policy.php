@@ -5,6 +5,7 @@
 
 define( 'ABSPATH', dirname( __DIR__ ) . '/' );
 require_once ABSPATH . 'includes/class-adc-security-csp.php';
+require_once ABSPATH . 'includes/class-adc-security-hardening.php';
 
 $fail = static function ( $message ) {
 	fwrite( STDERR, $message . PHP_EOL );
@@ -12,6 +13,20 @@ $fail = static function ( $message ) {
 };
 
 $policy = new ADC_Security_Csp_Policy();
+$header_definitions = ADC_Security_Hardening::get_security_header_definitions();
+$expected_header_keys = array(
+	'content_type_options',
+	'frame_options',
+	'xss_protection',
+	'referrer_policy',
+	'csp',
+	'permissions_policy',
+	'hsts',
+);
+
+if ( $expected_header_keys !== array_keys( $header_definitions ) ) {
+	$fail( 'Fine-tunable security header keys changed unexpectedly.' );
+}
 
 $strict = $policy->build( '', false );
 if ( false !== strpos( $strict, "'unsafe-eval'" ) ) {

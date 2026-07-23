@@ -12,6 +12,44 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ADC_Security_Hardening {
 
 	/**
+	 * Fixed security headers exposed to the admin allowlist.
+	 *
+	 * @return array<string,array<string,string>>
+	 */
+	public static function get_security_header_definitions() {
+		return array(
+			'content_type_options' => array(
+				'label'       => 'X-Content-Type-Options',
+				'description' => 'Blocks MIME-type sniffing.',
+			),
+			'frame_options' => array(
+				'label'       => 'X-Frame-Options',
+				'description' => 'Prevents the site from being framed by other origins.',
+			),
+			'xss_protection' => array(
+				'label'       => 'X-XSS-Protection (legacy)',
+				'description' => 'Enables the legacy browser XSS filter where supported.',
+			),
+			'referrer_policy' => array(
+				'label'       => 'Referrer-Policy',
+				'description' => 'Limits referrer information sent to other origins.',
+			),
+			'csp' => array(
+				'label'       => 'Content-Security-Policy',
+				'description' => 'Controls script, frame, image, font, and connection origins.',
+			),
+			'permissions_policy' => array(
+				'label'       => 'Permissions-Policy',
+				'description' => 'Disables sensitive browser features by default.',
+			),
+			'hsts' => array(
+				'label'       => 'Strict-Transport-Security',
+				'description' => 'Forces HTTPS in supporting browsers when the request is already HTTPS.',
+			),
+		);
+	}
+
+	/**
 	 * Options
 	 *
 	 * @var array
@@ -170,36 +208,61 @@ class ADC_Security_Hardening {
 	 */
 	private function init_security_headers() {
 		add_action( 'send_headers', function() {
-			header( 'X-Content-Type-Options: nosniff' );
-			header( 'X-Frame-Options: SAMEORIGIN' );
-			header( 'X-XSS-Protection: 1; mode=block' );
-			header( 'Referrer-Policy: strict-origin-when-cross-origin' );
-
-			// CSP: use admin-configured value or a secure restrictive default.
-			$custom_csp = isset( $this->options['security_headers_csp'] ) ? $this->options['security_headers_csp'] : '';
-			if ( ! empty( $custom_csp ) ) {
-				header( 'Content-Security-Policy: ' . $custom_csp );
-			} else {
-				// Balanced default: WordPress page builders need inline configuration scripts.
-				// Keep eval disabled, allow HTTPS XHR/fetch for third-party integrations,
-				// and limit external executable resources to known origins.
-				$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-				$allow_dynamic_scripts = $this->csp->allows_dynamic_scripts(
-					! empty( $this->options['csp_dynamic_scripts_compatibility'] ),
-					is_admin(),
-					$request_uri
-				);
-
-				header( 'Content-Security-Policy: ' . $this->csp->build( '', $allow_dynamic_scripts ) );
+			if ( $this->is_security_header_enabled( 'content_type_options' ) ) {
+				header( 'X-Content-Type-Options: nosniff' );
+			}
+			if ( $this->is_security_header_enabled( 'frame_options' ) ) {
+				header( 'X-Frame-Options: SAMEORIGIN' );
+			}
+			if ( $this->is_security_header_enabled( 'xss_protection' ) ) {
+				header( 'X-XSS-Protection: 1; mode=block' );
+			}
+			if ( $this->is_security_header_enabled( 'referrer_policy' ) ) {
+				header( 'Referrer-Policy: strict-origin-when-cross-origin' );
 			}
 
-			header( 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()' );
+			// CSP: use admin-configured value or a secure restrictive default.
+			if ( $this->is_security_header_enabled( 'csp' ) ) {
+				$custom_csp = isset( $this->options['security_headers_csp'] ) ? $this->options['security_headers_csp'] : '';
+				if ( ! empty( $custom_csp ) ) {
+					header( 'Content-Security-Policy: ' . $custom_csp );
+				} else {
+					// Balanced default: WordPress page builders need inline configuration scripts.
+					// Keep eval disabled, allow HTTPS XHR/fetch for third-party integrations,
+					// and limit external executable resources to known origins.
+					$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+					$allow_dynamic_scripts = $this->csp->allows_dynamic_scripts(
+						! empty( $this->options['csp_dynamic_scripts_compatibility'] ),
+						is_admin(),
+						$request_uri
+					);
+
+					header( 'Content-Security-Policy: ' . $this->csp->build( '', $allow_dynamic_scripts ) );
+				}
+			}
+
+			if ( $this->is_security_header_enabled( 'permissions_policy' ) ) {
+				header( 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()' );
+			}
 
 			// HSTS: only send when HTTPS is active to avoid issues on HTTP-only sites.
-			if ( is_ssl() ) {
+			if ( $this->is_security_header_enabled( 'hsts' ) && is_ssl() ) {
 				header( 'Strict-Transport-Security: max-age=31536000; includeSubDomains' );
 			}
 		});
+	}
+
+	/**
+	 * Check the fixed header allowlist, preserving the old all-enabled behavior
+	 * for installs that predate the fine-tuning option.
+	 *
+	 * @param string $header_key Fixed header key.
+	 * @return bool
+	 */
+	private function is_security_header_enabled( $header_key ) {
+		$selected = isset( $this->options['security_header_toggles'] ) && is_array( $this->options['security_header_toggles'] ) ? $this->options['security_header_toggles'] : array_keys( self::get_security_header_definitions() );
+
+		return in_array( $header_key, $selected, true );
 	}
 
 
