@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.7.3] - 2026-07-23
+### Fixed
+- **Plugin Update Icon**: Include branded SVG icon metadata in custom WordPress update and plugin-information responses.
+
 ## [1.7.2] - 2026-07-23
 ### Changed
 - **Security Headers**: Grouped all header controls under one admin section and made the generated CSP opt-in by default for WordPress themes and WooCommerce variation compatibility.

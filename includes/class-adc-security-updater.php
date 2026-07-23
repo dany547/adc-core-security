@@ -66,6 +66,8 @@ class ADC_Security_Updater {
 			$res->tested        = $this->get_wp_tested_version( $release );
 			$res->requires      = '5.8';
 			$res->requires_php  = '7.4';
+			$res->icons         = $this->get_plugin_icons();
+			$res->icon          = $res->icons['svg'];
 
 			$transient->response[ $res->plugin ] = $res;
 		}
@@ -115,6 +117,7 @@ class ADC_Security_Updater {
 		$res->trunk          = $download_url;
 		$res->last_updated   = isset( $release->published_at ) ? $release->published_at : '';
 		$res->tested         = $this->get_wp_tested_version( $release );
+		$res->icons          = $this->get_plugin_icons();
 
 		$res->sections = array(
 			'description'  => $this->get_release_body_html( $release ),
@@ -238,5 +241,20 @@ class ADC_Security_Updater {
 
 		$html = wp_kses_post( nl2br( esc_html( $body ) ) );
 		return $html;
+	}
+
+	/**
+	 * Return icon metadata for WordPress update and plugin-information views.
+	 *
+	 * @return array<string,string>
+	 */
+	private function get_plugin_icons() {
+		$icon_url = ADC_SECURITY_URL . 'assets/svg/icon-menu.svg';
+
+		return array(
+			'1x'  => $icon_url,
+			'2x'  => $icon_url,
+			'svg' => $icon_url,
+		);
 	}
 }
