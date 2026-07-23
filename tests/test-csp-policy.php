@@ -33,6 +33,10 @@ if ( false !== strpos( $strict, "'unsafe-eval'" ) ) {
 	$fail( 'Strict CSP unexpectedly allows unsafe-eval.' );
 }
 
+if ( false === strpos( $strict, 'https://www.googletagmanager.com' ) || false === strpos( $strict, 'style-src' ) ) {
+	$fail( 'Common Google Tag Manager stylesheet origin is missing from style-src.' );
+}
+
 $compatibility = $policy->build( '', true );
 if ( false === strpos( $compatibility, "'unsafe-eval'" ) ) {
 	$fail( 'Compatibility CSP does not allow dynamic script compilation.' );

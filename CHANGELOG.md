@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.7.4] - 2026-07-23
+### Fixed
+- **CSP Common Services**: Allow Google Tag Manager and Cloudflare stylesheet resources in the generated `style-src` allowlist.
+
 ## [1.7.3] - 2026-07-23
 ### Fixed
 - **Plugin Update Icon**: Include branded SVG icon metadata in custom WordPress update and plugin-information responses.

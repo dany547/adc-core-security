@@ -27,8 +27,9 @@ class ADC_Security_Csp_Policy {
 		if ( $allow_dynamic_scripts ) {
 			$script_src .= " 'unsafe-eval'";
 		}
+		$style_src = "'self' 'unsafe-inline' https://fonts.googleapis.com https://www.googletagmanager.com https://challenges.cloudflare.com";
 
-		return "default-src 'self'; script-src {$script_src}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src 'self' https://challenges.cloudflare.com https://maps.google.com https://www.google.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';";
+		return "default-src 'self'; script-src {$script_src}; style-src {$style_src}; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src 'self' https://challenges.cloudflare.com https://maps.google.com https://www.google.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';";
 	}
 
 	/**
