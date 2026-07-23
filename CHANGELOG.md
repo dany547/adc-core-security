@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.6.3] - 2026-07-23
+### Fixed
+- **Content-Security-Policy**: Allow Google Maps iframe embeds from the required Google origins.
+
 ## [1.6.2] - 2026-07-23
 ### Fixed
 - **Content-Security-Policy**: Allow HTTPS XHR/fetch requests for third-party integrations and Google Ads script loading.
