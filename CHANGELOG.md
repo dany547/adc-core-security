@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.0] - 2026-07-23
+### Added
+- **Fixed .htaccess Rules**: Added explicit, reversible Apache/LiteSpeed rules for XML-RPC, sensitive files, and PHP execution in uploads without accepting custom directives.
+- **Frontend Dynamic Script Compatibility**: Added an opt-in frontend-only CSP mode for themes and plugins that require dynamic JavaScript template compilation.
+- **Security Tests**: Added standalone tests for fixed .htaccess rules, rollback behavior, drift handling, and CSP contexts.
+
+### Changed
+- **CSP Architecture**: Extracted CSP policy generation and request classification into a dedicated module with strict default behavior.
+
 ## [1.6.3] - 2026-07-23
 ### Fixed
 - **Content-Security-Policy**: Allow Google Maps iframe embeds from the required Google origins.

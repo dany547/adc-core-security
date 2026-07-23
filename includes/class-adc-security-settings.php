@@ -17,13 +17,23 @@ class ADC_Security_Settings {
 	const OPTION_NAME = 'adc_security_options';
 
 	/**
+	 * Fixed-rule .htaccess manager.
+	 *
+	 * @var ADC_Security_Htaccess
+	 */
+	private $htaccess;
+
+	/**
 	 * Constructor.
 	 */
-	public function __construct() {
+	public function __construct( $htaccess = null ) {
+		$this->htaccess = $htaccess instanceof ADC_Security_Htaccess ? $htaccess : new ADC_Security_Htaccess();
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_init', array( $this, 'handle_debug_export' ) );
         add_action( 'admin_init', array( $this, 'handle_clear_logs' ) );
+		add_action( 'admin_post_adc_security_apply_htaccess', array( $this, 'handle_apply_htaccess' ) );
+		add_action( 'admin_post_adc_security_revert_htaccess', array( $this, 'handle_revert_htaccess' ) );
         // Removed global admin_head hook to prevent interference and fix warnings
 	}
 
@@ -280,6 +290,18 @@ class ADC_Security_Settings {
 			)
 		);
 
+		add_settings_field(
+			'htaccess_rules',
+			'Safe .htaccess Rules',
+			array( $this, 'render_htaccess_rules_field' ),
+			'adc_security_hardening',
+			'adc_security_hardening_section',
+			array(
+				'label_for'   => 'htaccess_rules',
+				'description' => 'Select fixed server rules to apply explicitly. The plugin never accepts custom .htaccess text and never changes these rules automatically.',
+			)
+		);
+
         add_settings_field(
 			'disable_rest_api',
 			'Disable REST API (Public)',
@@ -324,6 +346,18 @@ class ADC_Security_Settings {
                 'description' => 'Custom Content-Security-Policy header value. Leave empty for the WordPress-compatible default, which allows inline configuration scripts, data fonts, HTTPS XHR/fetch requests, and Google Maps embeds used by page builders and integrations. Only applies when "Enable Security Headers" is checked. Existing custom values override the default; keep <code>\'unsafe-eval\'</code> disabled unless a specific plugin requires it.',
             )
         );
+
+		add_settings_field(
+			'csp_dynamic_scripts_compatibility',
+			'Frontend Dynamic Script Compatibility',
+			array( $this, 'render_checkbox_field' ),
+			'adc_security_hardening',
+			'adc_security_hardening_section',
+			array(
+				'label_for'   => 'csp_dynamic_scripts_compatibility',
+				'description' => 'Allows JavaScript template compilation required by some WooCommerce and theme scripts on frontend pages only. This adds <code>unsafe-eval</code> to the default CSP and remains disabled by default. A custom CSP value overrides this setting.',
+			)
+		);
 
         add_settings_field(
             'prevent_user_enumeration',
@@ -541,6 +575,66 @@ class ADC_Security_Settings {
     }
 
 	/**
+	 * Apply the selected fixed .htaccess rules.
+	 */
+	public function handle_apply_htaccess() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to modify server rules.', 'adc-security' ), 403 );
+		}
+
+		check_admin_referer( 'adc_security_apply_htaccess', 'adc_security_htaccess_nonce' );
+
+		$options = get_option( self::OPTION_NAME, array() );
+		$rules   = isset( $options['htaccess_rules'] ) && is_array( $options['htaccess_rules'] ) ? $options['htaccess_rules'] : array();
+		$result  = $this->htaccess->apply( $rules );
+
+		if ( is_wp_error( $result ) ) {
+			$this->redirect_htaccess_action( 'error', $result->get_error_code() );
+		}
+
+		$this->redirect_htaccess_action( 'applied' );
+	}
+
+	/**
+	 * Revert only the managed ADC Security .htaccess block.
+	 */
+	public function handle_revert_htaccess() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to revert server rules.', 'adc-security' ), 403 );
+		}
+
+		check_admin_referer( 'adc_security_revert_htaccess', 'adc_security_htaccess_nonce' );
+
+		$result = $this->htaccess->revert();
+		if ( is_wp_error( $result ) ) {
+			$this->redirect_htaccess_action( 'error', $result->get_error_code() );
+		}
+
+		$this->redirect_htaccess_action( 'reverted' );
+	}
+
+	/**
+	 * Redirect back to the Hardening tab after a server-rule action.
+	 *
+	 * @param string $result Result key.
+	 * @param string $error Error code when result is error.
+	 */
+	private function redirect_htaccess_action( $result, $error = '' ) {
+		$args = array(
+			'page'             => 'adc-security',
+			'tab'              => 'hardening',
+			'htaccess_result'  => sanitize_key( $result ),
+		);
+
+		if ( 'error' === $result && $error ) {
+			$args['htaccess_error'] = sanitize_key( $error );
+		}
+
+		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
 	 * Render settings page.
 	 */
 	public function render_settings_page() {
@@ -672,9 +766,12 @@ class ADC_Security_Settings {
                         do_settings_sections( 'adc_security_hardening' );
                     }
                     
-                    submit_button();
-                    ?>
-                </form>
+                     submit_button();
+                     ?>
+                 </form>
+				<?php if ( 'hardening' === $active_tab ) : ?>
+					<?php $this->render_htaccess_actions(); ?>
+				<?php endif; ?>
             <?php endif; ?>
 		</div>
 		<?php
@@ -734,11 +831,18 @@ class ADC_Security_Settings {
 			'login_success_notification',
 			'prevent_user_enumeration',
 			'admin_session_expiration_enabled',
+			'csp_dynamic_scripts_compatibility',
 		);
 		foreach ( $checkbox_keys as $key ) {
 			if ( isset( $input[ $key ] ) ) {
 				$new_input[ $key ] = $input[ $key ] ? 1 : 0;
 			}
+		}
+
+		// .htaccess rules are an internal allowlist; no raw directives are accepted.
+		if ( isset( $input['htaccess_rules'] ) && is_array( $input['htaccess_rules'] ) ) {
+			$selected_rules = array_values( array_unique( array_filter( array_map( 'sanitize_key', array_filter( $input['htaccess_rules'], 'is_string' ) ) ) ) );
+			$new_input['htaccess_rules'] = array_values( array_intersect( ADC_Security_Htaccess::get_rule_keys(), $selected_rules ) );
 		}
 
 		// CSP header: sanitize as raw header value (no HTML, no newlines).
@@ -796,6 +900,105 @@ class ADC_Security_Settings {
 		}
 
 		return implode( "\n", $valid );
+	}
+
+	/**
+	 * Render the fixed .htaccess rule selection.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_htaccess_rules_field( $args ) {
+		$options  = get_option( self::OPTION_NAME, array() );
+		$selected = isset( $options['htaccess_rules'] ) && is_array( $options['htaccess_rules'] ) ? $options['htaccess_rules'] : array();
+		$selected = array_map( 'sanitize_key', array_filter( $selected, 'is_string' ) );
+		?>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[htaccess_rules][]' ); ?>" value="">
+		<?php foreach ( ADC_Security_Htaccess::get_rule_definitions() as $key => $definition ) : ?>
+			<label style="display:block; margin:0 0 10px 0;">
+				<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[htaccess_rules][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>>
+				<strong><?php echo esc_html( $definition['label'] ); ?></strong>
+				<br><span class="description" style="margin-left:24px;"><?php echo esc_html( $definition['description'] ); ?></span>
+			</label>
+		<?php endforeach; ?>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?> Rules are saved first; they are not active until you explicitly apply them below.</p>
+		<?php
+	}
+
+	/**
+	 * Render explicit apply/revert controls outside the Settings API form.
+	 */
+	private function render_htaccess_actions() {
+		$status = $this->htaccess->get_status();
+		$result = isset( $_GET['htaccess_result'] ) ? sanitize_key( wp_unslash( $_GET['htaccess_result'] ) ) : '';
+		$error  = isset( $_GET['htaccess_error'] ) ? sanitize_key( wp_unslash( $_GET['htaccess_error'] ) ) : '';
+		?>
+		<div class="adc-htaccess-controls" style="background:#fff; border:1px solid #ccd0d4; margin-top:20px; padding:20px; max-width:900px;">
+			<h2>Apply Server Rules</h2>
+			<?php if ( 'applied' === $result ) : ?>
+				<div class="notice notice-success inline"><p>ADC Security fixed .htaccess rules were applied.</p></div>
+			<?php elseif ( 'reverted' === $result ) : ?>
+				<div class="notice notice-success inline"><p>ADC Security fixed .htaccess rules were reverted.</p></div>
+			<?php elseif ( 'error' === $result ) : ?>
+				<div class="notice notice-error inline"><p><?php echo esc_html( $this->get_htaccess_error_message( $error ) ); ?></p></div>
+			<?php endif; ?>
+
+			<p>Server: <strong><?php echo esc_html( $status['server'] ); ?></strong></p>
+			<?php if ( isset( $status['error'] ) ) : ?>
+				<div class="notice notice-warning inline"><p><?php echo esc_html( $status['error'] ); ?></p></div>
+			<?php elseif ( ! $status['supported'] ) : ?>
+				<div class="notice notice-warning inline"><p>Automatic changes are disabled on this server family. Use the fixed rules as a reference for the server administrator.</p></div>
+				<?php if ( $status['managed'] ) : ?>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+						<input type="hidden" name="action" value="adc_security_revert_htaccess">
+						<?php wp_nonce_field( 'adc_security_revert_htaccess', 'adc_security_htaccess_nonce' ); ?>
+						<button type="submit" class="button button-secondary">Revert ADC Rules</button>
+					</form>
+				<?php endif; ?>
+			<?php else : ?>
+				<p>Status: <strong><?php echo $status['managed'] ? 'ADC Security rules are present.' : 'No ADC Security rule block is active.'; ?></strong></p>
+				<?php if ( ! empty( $status['drift'] ) ) : ?>
+					<div class="notice notice-warning inline"><p>The managed .htaccess file changed outside ADC Security. Apply or revert will preserve external changes.</p></div>
+				<?php endif; ?>
+				<p class="description">Save the selected rules above, then apply them explicitly. Revert removes only the ADC Security marker block and preserves other server rules.</p>
+				<div>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block; margin-right:8px;">
+						<input type="hidden" name="action" value="adc_security_apply_htaccess">
+						<?php wp_nonce_field( 'adc_security_apply_htaccess', 'adc_security_htaccess_nonce' ); ?>
+						<button type="submit" class="button button-primary">Apply Selected Rules</button>
+					</form>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+						<input type="hidden" name="action" value="adc_security_revert_htaccess">
+						<?php wp_nonce_field( 'adc_security_revert_htaccess', 'adc_security_htaccess_nonce' ); ?>
+						<button type="submit" class="button button-secondary" onclick="return confirm('Revert only the ADC Security .htaccess block?');">Revert ADC Rules</button>
+					</form>
+				</div>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Map internal errors to safe admin-facing messages.
+	 *
+	 * @param string $error Error code.
+	 * @return string
+	 */
+	private function get_htaccess_error_message( $error ) {
+		$messages = array(
+			'adc_htaccess_unsupported_server' => 'Automatic .htaccess changes are unavailable on this server.',
+			'adc_htaccess_no_rules'           => 'Select at least one fixed rule before applying changes.',
+			'adc_htaccess_invalid_rules'      => 'The rule selection was invalid.',
+			'adc_htaccess_unknown_rule'       => 'An unknown rule was rejected.',
+			'adc_htaccess_invalid_markers'    => 'The existing ADC Security marker block is malformed. No changes were made.',
+			'adc_htaccess_symlink'             => 'The .htaccess file is a symlink and was not modified.',
+			'adc_htaccess_not_writable'       => 'The WordPress home directory is not writable.',
+			'adc_htaccess_too_large'          => 'The .htaccess file is larger than the safe processing limit.',
+			'adc_htaccess_unreadable'         => 'The .htaccess file could not be read.',
+			'adc_htaccess_write_failed'       => 'The temporary .htaccess file could not be written completely.',
+			'adc_htaccess_rename_failed'      => 'The updated .htaccess file could not be installed.',
+		);
+
+		return isset( $messages[ $error ] ) ? $messages[ $error ] : 'The server rule operation was not completed.';
 	}
 
 	/**

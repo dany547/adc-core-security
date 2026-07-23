@@ -81,6 +81,8 @@ jobs:
             "includes/class-adc-security-settings.php"
             "includes/class-adc-security-login.php"
             "includes/class-adc-security-hardening.php"
+            "includes/class-adc-security-htaccess.php"
+            "includes/class-adc-security-csp.php"
             "includes/class-adc-security-captcha.php"
             "includes/class-adc-security-logger.php"
             "includes/class-adc-security-updater.php"
@@ -96,6 +98,12 @@ jobs:
             exit 1
           fi
           echo "All required plugin files present."
+
+      - name: Test fixed .htaccess policy
+        run: php tests/test-htaccess-rules.php
+
+      - name: Test CSP policy
+        run: php tests/test-csp-policy.php
 
       - name: Check ABSPATH guards
         run: |

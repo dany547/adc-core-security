@@ -47,6 +47,20 @@ class ADC_Security_Core {
 	public $hardening;
 
 	/**
+	 * Fixed-rule .htaccess manager instance.
+	 *
+	 * @var ADC_Security_Htaccess
+	 */
+	public $htaccess;
+
+	/**
+	 * CSP policy module instance.
+	 *
+	 * @var ADC_Security_Csp_Policy
+	 */
+	public $csp;
+
+	/**
 	 * Captcha instance.
 	 * 
 	 * @var ADC_Security_Captcha
@@ -105,6 +119,8 @@ class ADC_Security_Core {
             'prevent_user_enumeration'         => 0,
             'admin_session_expiration_enabled' => 0,
             'admin_session_expiration_days'    => 7,
+			'htaccess_rules'                    => array(),
+			'csp_dynamic_scripts_compatibility' => 0,
         );
 
         $changed = false;
@@ -124,6 +140,8 @@ class ADC_Security_Core {
 	 * Include required files.
 	 */
 	private function includes() {
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-htaccess.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-csp.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-settings.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-login.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-hardening.php';
@@ -136,10 +154,12 @@ class ADC_Security_Core {
 	 * Instantiate classes.
 	 */
 	private function instantiate() {
-        $this->logger    = new ADC_Security_Logger();
-		$this->settings  = new ADC_Security_Settings();
+		$this->logger    = new ADC_Security_Logger();
+		$this->htaccess  = new ADC_Security_Htaccess();
+		$this->csp       = new ADC_Security_Csp_Policy();
+		$this->settings  = new ADC_Security_Settings( $this->htaccess );
 		$this->login     = new ADC_Security_Login();
-		$this->hardening = new ADC_Security_Hardening();
+		$this->hardening = new ADC_Security_Hardening( $this->csp );
 		$this->captcha   = new ADC_Security_Captcha();
         
         // Init Updater

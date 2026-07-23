@@ -19,10 +19,18 @@ class ADC_Security_Hardening {
 	private $options;
 
 	/**
+	 * CSP policy module.
+	 *
+	 * @var ADC_Security_Csp_Policy
+	 */
+	private $csp;
+
+	/**
 	 * Constructor.
 	 */
-	public function __construct() {
+	public function __construct( $csp = null ) {
 		$this->options = get_option( 'adc_security_options' );
+		$this->csp     = $csp instanceof ADC_Security_Csp_Policy ? $csp : new ADC_Security_Csp_Policy();
 
 		if ( ! empty( $this->options['hide_wp_version'] ) ) {
 			$this->init_hide_version();
@@ -175,7 +183,14 @@ class ADC_Security_Hardening {
 				// Balanced default: WordPress page builders need inline configuration scripts.
 				// Keep eval disabled, allow HTTPS XHR/fetch for third-party integrations,
 				// and limit external executable resources to known origins.
-				header( "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com https://googleads.g.doubleclick.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src 'self' https://challenges.cloudflare.com https://maps.google.com https://www.google.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';" );
+				$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+				$allow_dynamic_scripts = $this->csp->allows_dynamic_scripts(
+					! empty( $this->options['csp_dynamic_scripts_compatibility'] ),
+					is_admin(),
+					$request_uri
+				);
+
+				header( 'Content-Security-Policy: ' . $this->csp->build( '', $allow_dynamic_scripts ) );
 			}
 
 			header( 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()' );
@@ -186,6 +201,7 @@ class ADC_Security_Hardening {
 			}
 		});
 	}
+
 
 	// -------------------------------------------------------------------------
 	// User Enumeration Prevention

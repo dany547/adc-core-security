@@ -15,6 +15,8 @@ delete_option( 'adc_security_options' );
 delete_option( 'adc_security_version' );
 delete_option( 'adc_security_error_log' );
 delete_option( 'adc_locked_ips' );
+delete_option( 'adc_security_htaccess_backup' );
+delete_option( 'adc_security_htaccess_state' );
 
 // Remove brute-force transients.
 $transients = array(
