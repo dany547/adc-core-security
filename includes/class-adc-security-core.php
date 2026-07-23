@@ -121,7 +121,7 @@ class ADC_Security_Core {
 			'admin_session_expiration_days'    => 7,
 			'htaccess_rules'                    => array(),
 			'csp_dynamic_scripts_compatibility' => 0,
-			'security_header_toggles'            => array_keys( ADC_Security_Hardening::get_security_header_definitions() ),
+			'security_header_toggles'            => array_values( array_diff( array_keys( ADC_Security_Hardening::get_security_header_definitions() ), array( 'csp' ) ) ),
         );
 
         $changed = false;
@@ -131,6 +131,18 @@ class ADC_Security_Core {
                 $changed = true;
             }
         }
+
+		// CSP is opt-in from 1.7.2 onward. Preserve all other header choices while
+		// removing the default CSP that 1.7.0/1.7.1 added automatically.
+		if (
+			version_compare( ADC_SECURITY_VERSION, '1.7.2', '>=' ) &&
+			version_compare( (string) get_option( 'adc_security_version', '0.0.0' ), '1.7.2', '<' ) &&
+			isset( $options['security_header_toggles'] ) && is_array( $options['security_header_toggles'] ) &&
+			in_array( 'csp', $options['security_header_toggles'], true )
+		) {
+			$options['security_header_toggles'] = array_values( array_diff( $options['security_header_toggles'], array( 'csp' ) ) );
+			$changed = true;
+		}
 
         if ( $changed ) {
             update_option( 'adc_security_options', $options, false );

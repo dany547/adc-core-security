@@ -260,7 +260,8 @@ class ADC_Security_Hardening {
 	 * @return bool
 	 */
 	private function is_security_header_enabled( $header_key ) {
-		$selected = isset( $this->options['security_header_toggles'] ) && is_array( $this->options['security_header_toggles'] ) ? $this->options['security_header_toggles'] : array_keys( self::get_security_header_definitions() );
+		$default_headers = array_values( array_diff( array_keys( self::get_security_header_definitions() ), array( 'csp' ) ) );
+		$selected = isset( $this->options['security_header_toggles'] ) && is_array( $this->options['security_header_toggles'] ) ? $this->options['security_header_toggles'] : $default_headers;
 
 		return in_array( $header_key, $selected, true );
 	}

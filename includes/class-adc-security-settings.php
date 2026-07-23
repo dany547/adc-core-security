@@ -314,12 +314,19 @@ class ADC_Security_Settings {
 			)
 		);
 
-        add_settings_field(
+		add_settings_section(
+			'adc_security_headers_section',
+			'Security Headers',
+			null,
+			'adc_security_hardening'
+		);
+
+		add_settings_field(
 			'security_headers',
 			'Enable Security Headers',
 			array( $this, 'render_checkbox_field' ),
 			'adc_security_hardening',
-			'adc_security_hardening_section',
+			'adc_security_headers_section',
 			array(
 				'label_for' => 'security_headers',
 				'description' => 'Adds the following HTTP security headers to protect your site:<br>
@@ -328,7 +335,7 @@ class ADC_Security_Settings {
                     <li><strong>X-Frame-Options:</strong> SAMEORIGIN (Prevents clickjacking)</li>
                     <li><strong>X-XSS-Protection:</strong> 1; mode=block (Enables XSS filtering)</li>
                     <li><strong>Referrer-Policy:</strong> strict-origin-when-cross-origin (Controls referrer info)</li>
-                    <li><strong>Content-Security-Policy:</strong> Configurable via the field below</li>
+                    <li><strong>Content-Security-Policy:</strong> Optional and configurable below</li>
                     <li><strong>Permissions-Policy:</strong> Disables sensitive features (Camera, Mic, etc.)</li>
                     <li><strong>Strict-Transport-Security:</strong> Sent only when HTTPS is active (Enforces HTTPS)</li>
                 </ul>',
@@ -340,10 +347,10 @@ class ADC_Security_Settings {
             'Content-Security-Policy',
             array( $this, 'render_textarea_field' ),
             'adc_security_hardening',
-            'adc_security_hardening_section',
+            'adc_security_headers_section',
             array(
                 'label_for' => 'security_headers_csp',
-                'description' => 'Custom Content-Security-Policy header value. Leave empty for the WordPress-compatible default, which allows inline configuration scripts, data fonts, HTTPS XHR/fetch requests, and Google Maps embeds used by page builders and integrations. Only applies when "Enable Security Headers" is checked. Existing custom values override the default; keep <code>\'unsafe-eval\'</code> disabled unless a specific plugin requires it.',
+                'description' => 'Optional custom Content-Security-Policy value. Enable CSP in the fine-tuning list below before using this field. Existing custom values override the generated policy.',
             )
         );
 
@@ -352,7 +359,7 @@ class ADC_Security_Settings {
 			'Fine-tune Security Headers',
 			array( $this, 'render_security_header_toggles_field' ),
 			'adc_security_hardening',
-			'adc_security_hardening_section',
+			'adc_security_headers_section',
 			array(
 				'label_for'   => 'security_header_toggles',
 				'description' => 'Choose which fixed headers are emitted when Enable Security Headers is active. CSP can be disabled independently when a theme or plugin requires dynamic JavaScript templates.',
@@ -364,7 +371,7 @@ class ADC_Security_Settings {
 			'Frontend Dynamic Script Compatibility',
 			array( $this, 'render_checkbox_field' ),
 			'adc_security_hardening',
-			'adc_security_hardening_section',
+			'adc_security_headers_section',
 			array(
 				'label_for'   => 'csp_dynamic_scripts_compatibility',
 				'description' => 'Allows JavaScript template compilation required by some WooCommerce and theme scripts on frontend pages only. This adds <code>unsafe-eval</code> to the default CSP and remains disabled by default. A custom CSP value overrides this setting.',
@@ -948,7 +955,7 @@ class ADC_Security_Settings {
 	 */
 	public function render_security_header_toggles_field( $args ) {
 		$options  = get_option( self::OPTION_NAME, array() );
-		$selected = isset( $options['security_header_toggles'] ) && is_array( $options['security_header_toggles'] ) ? $options['security_header_toggles'] : array_keys( ADC_Security_Hardening::get_security_header_definitions() );
+		$selected = isset( $options['security_header_toggles'] ) && is_array( $options['security_header_toggles'] ) ? $options['security_header_toggles'] : array_values( array_diff( array_keys( ADC_Security_Hardening::get_security_header_definitions() ), array( 'csp' ) ) );
 		$selected = array_map( 'sanitize_key', array_filter( $selected, 'is_string' ) );
 		?>
 		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[security_header_toggles][]' ); ?>" value="">

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2] - 2026-07-23
+### Changed
+- **Security Headers**: Grouped all header controls under one admin section and made the generated CSP opt-in by default for WordPress themes and WooCommerce variation compatibility.
+
+### Fixed
+- **CSP Migration**: Existing installations upgrading from 1.7.0 or 1.7.1 no longer keep the generated CSP enabled automatically; other security headers remain active.
+
 ## [1.7.1] - 2026-07-23
 ### Added
 - **Fine-tunable Security Headers**: Added fixed allowlist toggles for CSP, HSTS, framing, MIME sniffing, referrer policy, permissions policy, and legacy XSS protection.
