@@ -140,9 +140,11 @@ class ADC_Security_Captcha {
         $response = $_POST['cf-turnstile-response'];
         $secret   = isset( $this->options['turnstile_secret_key'] ) ? $this->options['turnstile_secret_key'] : '';
 
+        // Fail closed: an incomplete Turnstile configuration must never let
+        // authentication through unverified. A visible admin-facing error is
+        // safer than silently accepting any client-supplied response value.
         if ( empty( $secret ) ) {
-            return $user; // Allow if secret not set (config error) or fail closed? Fail closed safer but annoying. Let's fail open if config missing but warn. Actually fail closed is better for security plugin.
-            // But let's assume if key is missing, user knows.
+            return new WP_Error( 'turnstile_misconfigured', '<strong>Error</strong>: CAPTCHA is misconfigured. Please contact the site administrator.' );
         }
 
         $verify_url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
@@ -163,7 +165,7 @@ class ADC_Security_Captcha {
         $body = wp_remote_retrieve_body( $response );
         $result = json_decode( $body );
 
-        if ( ! $result->success ) {
+        if ( empty( $result->success ) ) {
             return new WP_Error( 'turnstile_fail', '<strong>Error</strong>: CAPTCHA verification failed.' );
         }
 

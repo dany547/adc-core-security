@@ -26,6 +26,7 @@ class ADC_Security_Updater {
 	public function __construct() {
 		add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'check_update' ) );
 		add_filter( 'plugins_api', array( $this, 'check_info' ), 10, 3 );
+		add_filter( 'upgrader_pre_download', array( $this, 'verify_package_checksum' ), 10, 3 );
 	}
 
 	/**
@@ -206,6 +207,99 @@ class ADC_Security_Updater {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Find a published "adc-security.zip.sha256" checksum asset for a release.
+	 *
+	 * The file is expected to contain a single lowercase hex SHA-256 digest,
+	 * generated with e.g. `sha256sum adc-security.zip`.
+	 *
+	 * @param object $release GitHub release object.
+	 * @return string|false Download URL of the checksum asset, or false.
+	 */
+	private function find_checksum_asset( $release ) {
+		if ( empty( $release->assets ) || ! is_array( $release->assets ) ) {
+			return false;
+		}
+
+		foreach ( $release->assets as $asset ) {
+			if ( isset( $asset->name, $asset->browser_download_url ) && 'adc-security.zip.sha256' === $asset->name ) {
+				return $asset->browser_download_url;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Verify the downloaded plugin package against a published SHA-256 checksum
+	 * before WordPress installs it, guarding against a compromised or
+	 * MITM'd release asset (the update transient only carries a URL, which
+	 * WordPress core would otherwise trust and install unverified).
+	 *
+	 * If the release does not publish a checksum asset, the default download
+	 * behavior is left untouched so existing releases keep updating; once a
+	 * release does publish one, a mismatch or download failure hard-aborts
+	 * the update.
+	 *
+	 * @param bool|WP_Error $reply    Short-circuit value from other filters.
+	 * @param string        $package  Package URL WordPress is about to download.
+	 * @param WP_Upgrader   $upgrader Upgrader instance.
+	 * @return bool|WP_Error|string
+	 */
+	public function verify_package_checksum( $reply, $package, $upgrader ) {
+		if ( false !== $reply ) {
+			return $reply;
+		}
+
+		$release = $this->get_latest_release();
+		if ( ! $release ) {
+			return $reply;
+		}
+
+		$download_url = $this->find_zip_asset( $release );
+		if ( ! $download_url || $download_url !== $package ) {
+			return $reply;
+		}
+
+		$checksum_url = $this->find_checksum_asset( $release );
+		if ( ! $checksum_url ) {
+			return $reply;
+		}
+
+		$checksum_request = wp_remote_get( $checksum_url, array(
+			'timeout'   => 15,
+			'sslverify' => true,
+		) );
+
+		if ( is_wp_error( $checksum_request ) || 200 !== (int) wp_remote_retrieve_response_code( $checksum_request ) ) {
+			return new WP_Error( 'adc_update_checksum_unavailable', 'ADC Security: the release checksum could not be retrieved. Update aborted.' );
+		}
+
+		$expected = strtolower( trim( wp_remote_retrieve_body( $checksum_request ) ) );
+		$expected = preg_replace( '/\s.*$/', '', $expected ); // Tolerate "sha256sum"-style "<hash>  <filename>" output.
+
+		if ( ! preg_match( '/^[a-f0-9]{64}$/', $expected ) ) {
+			return new WP_Error( 'adc_update_checksum_invalid', 'ADC Security: the release checksum has an unexpected format. Update aborted.' );
+		}
+
+		if ( ! function_exists( 'download_url' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+
+		$temp_file = download_url( $package );
+		if ( is_wp_error( $temp_file ) ) {
+			return $temp_file;
+		}
+
+		$actual = hash_file( 'sha256', $temp_file );
+		if ( ! hash_equals( $expected, (string) $actual ) ) {
+			wp_delete_file( $temp_file );
+			return new WP_Error( 'adc_update_checksum_mismatch', 'ADC Security: the downloaded update package failed checksum verification. Update aborted.' );
+		}
+
+		return $temp_file;
 	}
 
 	/**

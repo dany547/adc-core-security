@@ -388,7 +388,7 @@ class ADC_Security_Login {
 	 * Handle the custom login request processing
 	 */
 	public function handle_custom_login() {
-		if ( get_query_var( 'adc_login' ) || isset( $_GET['adc_login'] ) ) {
+		if ( get_query_var( 'adc_login' ) ) {
 			$file = ABSPATH . 'wp-login.php';
 			if ( file_exists( $file ) ) {
 				global $user_login, $user_identity, $error, $action;
@@ -429,8 +429,14 @@ class ADC_Security_Login {
 	}
 
 	public function block_wp_login() {
+		// The custom login flow never requests wp-login.php directly -- it is
+		// served via the rewritten slug URL (see handle_custom_login()), and all
+		// WordPress-generated links to wp-login.php are already rewritten to
+		// that slug by filter_site_url()/filter_wp_redirect(). A direct request
+		// for wp-login.php is therefore never legitimate once a custom slug is
+		// configured, so no request parameter may bypass this block.
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		if ( strpos( $request_uri, 'wp-login.php' ) !== false && ! isset( $_REQUEST['adc_login'] ) ) {
+		if ( strpos( $request_uri, 'wp-login.php' ) !== false ) {
 			if ( defined( 'DOING_AJAX' ) || ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) ) {
 				return;
 			}

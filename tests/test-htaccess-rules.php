@@ -85,6 +85,9 @@ $expected_keys = array(
 	'block_xmlrpc_endpoint',
 	'block_sensitive_files',
 	'disable_upload_php',
+	'disable_includes_php',
+	'disable_cache_php',
+	'block_directory_browsing',
 );
 
 if ( $expected_keys !== array_keys( $definitions ) ) {

@@ -24,16 +24,26 @@ class ADC_Security_Settings {
 	private $htaccess;
 
 	/**
+	 * Security key (salt) manager.
+	 *
+	 * @var ADC_Security_Keys
+	 */
+	private $keys;
+
+	/**
 	 * Constructor.
 	 */
-	public function __construct( $htaccess = null ) {
+	public function __construct( $htaccess = null, $keys = null ) {
 		$this->htaccess = $htaccess instanceof ADC_Security_Htaccess ? $htaccess : new ADC_Security_Htaccess();
+		$this->keys     = $keys instanceof ADC_Security_Keys ? $keys : new ADC_Security_Keys();
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_init', array( $this, 'handle_debug_export' ) );
         add_action( 'admin_init', array( $this, 'handle_clear_logs' ) );
 		add_action( 'admin_post_adc_security_apply_htaccess', array( $this, 'handle_apply_htaccess' ) );
 		add_action( 'admin_post_adc_security_revert_htaccess', array( $this, 'handle_revert_htaccess' ) );
+		add_action( 'admin_post_adc_security_regenerate_keys', array( $this, 'handle_regenerate_keys' ) );
+		add_action( 'admin_post_adc_security_restore_keys', array( $this, 'handle_restore_keys' ) );
         // Removed global admin_head hook to prevent interference and fix warnings
 	}
 
@@ -390,6 +400,42 @@ class ADC_Security_Settings {
             )
         );
 
+		add_settings_field(
+			'disable_pingbacks',
+			'Turn Off Pingbacks',
+			array( $this, 'render_checkbox_field' ),
+			'adc_security_hardening',
+			'adc_security_hardening_section',
+			array(
+				'label_for'   => 'disable_pingbacks',
+				'description' => 'Removes the X-Pingback header, disables the pingback.ping XML-RPC method, and closes pingbacks for new posts. Existing posts are unaffected.',
+			)
+		);
+
+		add_settings_field(
+			'disable_script_concat',
+			'Disable Admin Script Concatenation',
+			array( $this, 'render_checkbox_field' ),
+			'adc_security_hardening',
+			'adc_security_hardening_section',
+			array(
+				'label_for'   => 'disable_script_concat',
+				'description' => 'Disables the WordPress admin script/style concatenation feature (<code>CONCATENATE_SCRIPTS</code>), which can otherwise be used to probe loaded admin scripts.',
+			)
+		);
+
+		add_settings_field(
+			'alert_admin_username',
+			'Alert on Default Admin Username',
+			array( $this, 'render_checkbox_field' ),
+			'adc_security_hardening',
+			'adc_security_hardening_section',
+			array(
+				'label_for'   => 'alert_admin_username',
+				'description' => 'Shows a dashboard notice to administrators when an account still uses the default "admin" username. The plugin never renames or deletes accounts automatically.',
+			)
+		);
+
         // --- Auto Updates Section ---
         add_settings_section(
             'adc_security_updates_section',
@@ -654,6 +700,65 @@ class ADC_Security_Settings {
 	}
 
 	/**
+	 * Regenerate wp-config.php security keys from the WordPress.org API.
+	 */
+	public function handle_regenerate_keys() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to modify security keys.', 'adc-security' ), 403 );
+		}
+
+		check_admin_referer( 'adc_security_regenerate_keys', 'adc_security_keys_nonce' );
+
+		$result = $this->keys->regenerate();
+
+		if ( is_wp_error( $result ) ) {
+			$this->redirect_keys_action( 'error', $result->get_error_code() );
+		}
+
+		$this->redirect_keys_action( 'regenerated' );
+	}
+
+	/**
+	 * Restore wp-config.php security keys from the last backup.
+	 */
+	public function handle_restore_keys() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to modify security keys.', 'adc-security' ), 403 );
+		}
+
+		check_admin_referer( 'adc_security_restore_keys', 'adc_security_keys_nonce' );
+
+		$result = $this->keys->restore();
+
+		if ( is_wp_error( $result ) ) {
+			$this->redirect_keys_action( 'error', $result->get_error_code() );
+		}
+
+		$this->redirect_keys_action( 'restored' );
+	}
+
+	/**
+	 * Redirect back to the Hardening tab after a security-key action.
+	 *
+	 * @param string $result Result key.
+	 * @param string $error Error code when result is error.
+	 */
+	private function redirect_keys_action( $result, $error = '' ) {
+		$args = array(
+			'page'         => 'adc-security',
+			'tab'          => 'hardening',
+			'keys_result'  => sanitize_key( $result ),
+		);
+
+		if ( 'error' === $result && $error ) {
+			$args['keys_error'] = sanitize_key( $error );
+		}
+
+		wp_safe_redirect( add_query_arg( $args, admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
 	 * Render settings page.
 	 */
 	public function render_settings_page() {
@@ -790,6 +895,7 @@ class ADC_Security_Settings {
                  </form>
 				<?php if ( 'hardening' === $active_tab ) : ?>
 					<?php $this->render_htaccess_actions(); ?>
+					<?php $this->render_keys_actions(); ?>
 				<?php endif; ?>
             <?php endif; ?>
 		</div>
@@ -851,6 +957,9 @@ class ADC_Security_Settings {
 			'prevent_user_enumeration',
 			'admin_session_expiration_enabled',
 			'csp_dynamic_scripts_compatibility',
+			'disable_pingbacks',
+			'disable_script_concat',
+			'alert_admin_username',
 		);
 		foreach ( $checkbox_keys as $key ) {
 			if ( isset( $input[ $key ] ) ) {
@@ -1045,6 +1154,77 @@ class ADC_Security_Settings {
 		);
 
 		return isset( $messages[ $error ] ) ? $messages[ $error ] : 'The server rule operation was not completed.';
+	}
+
+	/**
+	 * Render explicit security-key regenerate/restore controls.
+	 */
+	private function render_keys_actions() {
+		$status = $this->keys->get_status();
+		$result = isset( $_GET['keys_result'] ) ? sanitize_key( wp_unslash( $_GET['keys_result'] ) ) : '';
+		$error  = isset( $_GET['keys_error'] ) ? sanitize_key( wp_unslash( $_GET['keys_error'] ) ) : '';
+		?>
+		<div class="adc-keys-controls" style="background:#fff; border:1px solid #ccd0d4; margin-top:20px; padding:20px; max-width:900px;">
+			<h2>Security Keys</h2>
+			<?php if ( 'regenerated' === $result ) : ?>
+				<div class="notice notice-success inline"><p>ADC Security: new authentication keys were fetched from WordPress.org and applied. All logged-in sessions, including yours, were invalidated.</p></div>
+			<?php elseif ( 'restored' === $result ) : ?>
+				<div class="notice notice-success inline"><p>ADC Security: the previous authentication keys were restored.</p></div>
+			<?php elseif ( 'error' === $result ) : ?>
+				<div class="notice notice-error inline"><p><?php echo esc_html( $this->get_keys_error_message( $error ) ); ?></p></div>
+			<?php endif; ?>
+
+			<?php if ( isset( $status['error'] ) ) : ?>
+				<div class="notice notice-warning inline"><p><?php echo esc_html( $status['error'] ); ?></p></div>
+			<?php elseif ( ! $status['writable'] ) : ?>
+				<div class="notice notice-warning inline"><p>wp-config.php is not writable by the web server, so keys cannot be regenerated automatically.</p></div>
+			<?php else : ?>
+				<p class="description">Fetches new AUTH_KEY/SALT values from the official WordPress.org secret-key service and replaces the existing definitions in wp-config.php. A backup of the current file is kept until the next regeneration. This immediately invalidates all logged-in sessions, including your own.</p>
+				<div>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block; margin-right:8px;">
+						<input type="hidden" name="action" value="adc_security_regenerate_keys">
+						<?php wp_nonce_field( 'adc_security_regenerate_keys', 'adc_security_keys_nonce' ); ?>
+						<button type="submit" class="button button-primary" onclick="return confirm('Regenerate security keys now? This will log out every currently logged-in user, including you.');">Regenerate Security Keys</button>
+					</form>
+					<?php if ( $status['has_backup'] ) : ?>
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+							<input type="hidden" name="action" value="adc_security_restore_keys">
+							<?php wp_nonce_field( 'adc_security_restore_keys', 'adc_security_keys_nonce' ); ?>
+							<button type="submit" class="button button-secondary" onclick="return confirm('Restore the previous security keys?');">Restore Previous Keys</button>
+						</form>
+						<p class="description">Last backup: <?php echo esc_html( $status['backed_up_at'] ); ?> UTC</p>
+					<?php endif; ?>
+				</div>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Map internal security-key errors to safe admin-facing messages.
+	 *
+	 * @param string $error Error code.
+	 * @return string
+	 */
+	private function get_keys_error_message( $error ) {
+		$messages = array(
+			'adc_keys_missing_config'        => 'wp-config.php could not be located.',
+			'adc_keys_symlink'                => 'wp-config.php is a symlink and was not modified.',
+			'adc_keys_invalid_path'          => 'wp-config.php could not be resolved.',
+			'adc_keys_not_writable'          => 'wp-config.php is not writable.',
+			'adc_keys_fetch_failed'          => 'The WordPress.org secret-key service could not be reached.',
+			'adc_keys_incomplete_response'   => 'The secret-key service response was incomplete.',
+			'adc_keys_definition_not_found'  => 'One or more key definitions could not be found in wp-config.php. No changes were made.',
+			'adc_keys_no_change'             => 'No key definitions were changed.',
+			'adc_keys_too_large'             => 'wp-config.php is larger than the safe processing limit.',
+			'adc_keys_unreadable'            => 'wp-config.php could not be read.',
+			'adc_keys_dir_not_writable'      => 'The wp-config.php directory is not writable.',
+			'adc_keys_write_failed'          => 'The temporary wp-config.php file could not be written completely.',
+			'adc_keys_rename_failed'         => 'The updated wp-config.php file could not be installed.',
+			'adc_keys_no_backup'             => 'No matching security key backup is available.',
+		);
+
+		return isset( $messages[ $error ] ) ? $messages[ $error ] : 'The security key operation was not completed.';
 	}
 
 	/**

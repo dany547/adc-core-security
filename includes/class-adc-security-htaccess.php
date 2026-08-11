@@ -43,9 +43,9 @@ class ADC_Security_Htaccess {
 			),
 			'block_sensitive_files' => array(
 				'label'       => 'Block common sensitive files',
-				'description' => 'Blocks direct access to wp-config.php, .env, .htaccess, and .htpasswd.',
+				'description' => 'Blocks direct access to wp-config.php, .env, .htaccess, .htpasswd, readme.html, license.txt, wp-config-sample.php, .git, composer.json, and package.json.',
 				'lines'       => array(
-					'<FilesMatch "^(wp-config\\.php|\\.env|\\.htaccess|\\.htpasswd)$">',
+					'<FilesMatch "^(wp-config\\.php|wp-config-sample\\.php|\\.env|\\.htaccess|\\.htpasswd|readme\\.html|license\\.txt|composer\\.json|composer\\.lock|package\\.json|package-lock\\.json)$">',
 					'    <IfModule mod_authz_core.c>',
 					'        Require all denied',
 					'    </IfModule>',
@@ -54,6 +54,10 @@ class ADC_Security_Htaccess {
 					'        Deny from all',
 					'    </IfModule>',
 					'</FilesMatch>',
+					'<IfModule mod_rewrite.c>',
+					'    RewriteEngine On',
+					'    RewriteRule ^(\\.git|\\.svn)(/|$) - [F,L]',
+					'</IfModule>',
 				),
 			),
 			'disable_upload_php' => array(
@@ -63,6 +67,35 @@ class ADC_Security_Htaccess {
 					'<IfModule mod_rewrite.c>',
 					'    RewriteEngine On',
 					'    RewriteRule ^wp-content/uploads/.*\\.(?:php[0-9]?|phtml|phar)$ - [F,L,NC]',
+					'</IfModule>',
+				),
+			),
+			'disable_includes_php' => array(
+				'label'       => 'Disable PHP execution in wp-includes',
+				'description' => 'Rejects direct requests for PHP-like files under wp-includes, a common target for planted malware.',
+				'lines'       => array(
+					'<IfModule mod_rewrite.c>',
+					'    RewriteEngine On',
+					'    RewriteRule ^wp-includes/.*\\.(?:php[0-9]?|phtml|phar)$ - [F,L,NC]',
+					'</IfModule>',
+				),
+			),
+			'disable_cache_php' => array(
+				'label'       => 'Disable PHP execution in cache directories',
+				'description' => 'Rejects PHP-like files under wp-content/cache, where caching plugins store generated files.',
+				'lines'       => array(
+					'<IfModule mod_rewrite.c>',
+					'    RewriteEngine On',
+					'    RewriteRule ^wp-content/cache/.*\\.(?:php[0-9]?|phtml|phar)$ - [F,L,NC]',
+					'</IfModule>',
+				),
+			),
+			'block_directory_browsing' => array(
+				'label'       => 'Block directory browsing',
+				'description' => 'Disables directory index listings for directories without an index file.',
+				'lines'       => array(
+					'<IfModule mod_autoindex.c>',
+					'    Options -Indexes',
 					'</IfModule>',
 				),
 			),

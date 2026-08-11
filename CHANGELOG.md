@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.8.1] - 2026-08-11
+### Fixed
+- **Custom Login URL Bypass**: `wp-login.php` could still be reached directly by appending any `?adc_login=` parameter, and the custom-login handler trusted the same raw parameter on any front-end URL. Both paths now require the request to have already been validated against the configured slug (via the rewrite rule / `parse_request` match), closing the obscurity bypass.
+- **REST User-Enumeration Bypass**: The `wp/v2/users` block matched only the pretty-permalink REST path, so it could be bypassed via `?rest_route=/wp/v2/users` on sites using the plain permalink form. The check now runs on `rest_request_before_callbacks` against the resolved `$request->get_route()`, which cannot be spoofed by the request's URL form.
+- **Turnstile Fail-Open**: If the Turnstile secret key was left blank, any login attempt was allowed through unverified. Missing configuration now fails closed with an admin-facing error instead of bypassing the CAPTCHA silently.
+- **Update Package Verification**: Plugin updates are now verified against an optional SHA-256 checksum asset (`adc-security.zip.sha256`) published alongside each GitHub release before installation, guarding against a compromised or tampered release package.
+
+## [1.8.0] - 2026-08-11
+### Added
+- **More Fixed .htaccess Rules**: Added reversible rules to disable PHP execution in `wp-includes` and `wp-content/cache`, block directory browsing (`Options -Indexes`), and extended the sensitive-files rule to cover `readme.html`, `license.txt`, `wp-config-sample.php`, `.git`, `.svn`, `composer.json`/`.lock`, and `package.json`/`package-lock.json`.
+- **Dedicated Pingback Control**: Turning off pingbacks now removes the `X-Pingback` header, disables the `pingback.ping` XML-RPC method, and closes pingbacks for new posts, independently of the XML-RPC toggle.
+- **Disable Admin Script Concatenation**: Optional `CONCATENATE_SCRIPTS` constant to disable admin script/style concatenation.
+- **Default Admin Username Alert**: Dashboard notice when an administrator account still uses the default "admin" username. No account is renamed automatically.
+- **Security Key Regeneration**: Regenerate AUTH_KEY/SALT values in `wp-config.php` from the official WordPress.org secret-key service, with an automatic backup and one-click restore.
+- **Security Tests**: Added standalone tests for the new .htaccess rules and for wp-config.php key regeneration/restore/rollback behavior.
+
+### Fixed
+- **Key Regeneration Regex**: The wp-config.php key replacement no longer matches commented-out `define()` lines, which could otherwise create a duplicate live definition.
+- **Key Backup Overwrite**: Regenerating security keys twice in a row no longer overwrites the original backup, so "Restore Previous Keys" always recovers the true original values.
+- **Pingback Status Type**: `default_ping_status` is now forced to the string `'closed'` (matching WordPress core's expected enum value) instead of the integer `0`.
+
 ## [1.7.4] - 2026-07-23
 ### Fixed
 - **CSP Common Services**: Allow Google Tag Manager and Cloudflare stylesheet resources in the generated `style-src` allowlist.

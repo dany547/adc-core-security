@@ -122,6 +122,9 @@ class ADC_Security_Core {
 			'htaccess_rules'                    => array(),
 			'csp_dynamic_scripts_compatibility' => 0,
 			'security_header_toggles'            => array_values( array_diff( array_keys( ADC_Security_Hardening::get_security_header_definitions() ), array( 'csp' ) ) ),
+			'disable_pingbacks'                  => 0,
+			'disable_script_concat'              => 0,
+			'alert_admin_username'               => 1,
         );
 
         $changed = false;
@@ -154,6 +157,7 @@ class ADC_Security_Core {
 	 */
 	private function includes() {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-htaccess.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-keys.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-csp.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-settings.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-login.php';
