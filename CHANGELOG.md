@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.9.1] - 2026-08-18
+### Changed
+- **Documentation**: README now documents the Dashboard, 2FA, audit log, rate limiting, trusted-proxy support, and file integrity/plugin health scanning added in 1.9.0, plus configuration notes for the trusted proxy header and 2FA enrollment/recovery codes.
+- **Admin CSS cleanup**: replaced the remaining inline `style="..."` attributes in the settings screens with classes in `assets/css/adc-admin.css`, so the admin UI's presentation lives in one stylesheet.
+
 ## [1.9.0] - 2026-08-18
 ### Fixed
 - **"The link you followed has expired" on Login Security save**: the Blocked IP Addresses table rendered a nested `<form>` inside the Settings API's `options.php` form, which browsers flatten, corrupting the settings nonce whenever at least one IP was locked out. The table now renders after the settings form and unblocks via its own `admin-post.php` handler and nonce.

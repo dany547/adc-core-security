@@ -615,7 +615,7 @@ class ADC_Security_Settings {
 
 		foreach ( wp_roles()->get_names() as $role_slug => $role_label ) {
 			?>
-			<label style="display:block; margin-bottom:4px;">
+			<label class="adc-block-label">
 				<input type="checkbox"
 					name="<?php echo esc_attr( self::OPTION_NAME . '[' . $args['label_for'] . '][]' ); ?>"
 					value="<?php echo esc_attr( $role_slug ); ?>"
@@ -1008,10 +1008,10 @@ class ADC_Security_Settings {
                         <li><strong>Session Expiration:</strong> Enforce configurable admin cookie lifetime for tighter access control.</li>
                     </ul>
 
-                    <hr style="margin: 30px 0; border: 0; border-top: 1px solid #ddd;">
+                    <hr class="adc-section-divider">
 
-                    <div class="adc-contact-cta" style="background: #f0f6fc; padding: 20px; border-radius: 8px; border: 1px solid #d0d7de;">
-                        <h3 style="margin-top: 0;">Do you want a custom plugin made?</h3>
+                    <div class="adc-contact-cta">
+                        <h3 class="adc-no-top-margin">Do you want a custom plugin made?</h3>
                         <p>We can help you build custom solutions tailored to your specific needs.</p>
                         <a href="https://adcelerum.ro/servicii-marketing/contact-agentia-de-publicitate/" target="_blank" class="button button-primary button-large">Contact Us</a>
                     </div>
@@ -1019,11 +1019,11 @@ class ADC_Security_Settings {
             <?php elseif ( 'activity' === $active_tab ) : ?>
                 <?php $this->render_activity_tab(); ?>
             <?php elseif ( 'support' === $active_tab ) : ?>
-                <div class="adc-support-content" style="background: #fff; padding: 20px; margin-top: 20px; border: 1px solid #ccd0d4;">
+                <div class="adc-support-content adc-panel">
                     <h2>System Status & Support</h2>
                     <p>Use the information below for troubleshooting or when contacting support.</p>
-                    
-                    <table class="widefat striped" style="margin-bottom: 20px; max-width: 600px;">
+
+                    <table class="widefat striped adc-status-table">
                         <tr><td><strong>WordPress Version</strong></td><td><?php echo esc_html( get_bloginfo( 'version' ) ); ?></td></tr>
                         <tr><td><strong>PHP Version</strong></td><td><?php echo esc_html( phpversion() ); ?></td></tr>
                         <tr><td><strong>Plugin Version</strong></td><td><?php echo esc_html( ADC_SECURITY_VERSION ); ?></td></tr>
@@ -1032,9 +1032,9 @@ class ADC_Security_Settings {
                         <tr><td><strong>HTTPS</strong></td><td><?php echo is_ssl() ? 'Yes' : 'No'; ?></td></tr>
                     </table>
 
-                    <div class="adc-debug-export" style="background: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 4px; display: flex; gap: 20px;">
+                    <div class="adc-debug-export">
                         <div>
-                            <h3 style="margin-top:0;">Export Debug Report</h3>
+                            <h3 class="adc-no-top-margin">Export Debug Report</h3>
                             <p>Generate a text file containing your current site settings, blocked IPs, and error logs.</p>
                             <form method="post" action="">
                                 <?php wp_nonce_field( 'adc_security_export_debug', 'adc_security_export_nonce' ); ?>
@@ -1042,8 +1042,8 @@ class ADC_Security_Settings {
                                 <button type="submit" class="button button-secondary">Download .txt Report</button>
                             </form>
                         </div>
-                        <div style="border-left: 1px solid #ddd; padding-left: 20px;">
-                            <h3 style="margin-top:0;">Maintenance</h3>
+                        <div class="adc-debug-export-divider">
+                            <h3 class="adc-no-top-margin">Maintenance</h3>
                             <p>Clear all recorded error and activity logs from the database.</p>
                             <form method="post" action="">
                                 <?php wp_nonce_field( 'adc_security_clear_logs', 'adc_security_clear_nonce' ); ?>
@@ -1054,7 +1054,7 @@ class ADC_Security_Settings {
                     </div>
                 </div>
             <?php elseif ( 'changelog' === $active_tab ) : ?>
-                <div class="adc-changelog-content" style="background: #fff; padding: 20px; margin-top: 20px; border: 1px solid #ccc;">
+                <div class="adc-changelog-content adc-panel">
                     <?php
                     $changelog_file = ADC_SECURITY_DIR . 'CHANGELOG.md';
                     if ( file_exists( $changelog_file ) ) {
@@ -1278,10 +1278,10 @@ class ADC_Security_Settings {
 		?>
 		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[htaccess_rules][]' ); ?>" value="">
 		<?php foreach ( ADC_Security_Htaccess::get_rule_definitions() as $key => $definition ) : ?>
-			<label style="display:block; margin:0 0 10px 0;">
+			<label class="adc-checkbox-row">
 				<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[htaccess_rules][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>>
 				<strong><?php echo esc_html( $definition['label'] ); ?></strong>
-				<br><span class="description" style="margin-left:24px;"><?php echo esc_html( $definition['description'] ); ?></span>
+				<br><span class="description adc-checkbox-description"><?php echo esc_html( $definition['description'] ); ?></span>
 			</label>
 		<?php endforeach; ?>
 		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?> Rules are saved first; they are not active until you explicitly apply them below.</p>
@@ -1300,10 +1300,10 @@ class ADC_Security_Settings {
 		?>
 		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[security_header_toggles][]' ); ?>" value="">
 		<?php foreach ( ADC_Security_Hardening::get_security_header_definitions() as $key => $definition ) : ?>
-			<label style="display:block; margin:0 0 10px 0;">
+			<label class="adc-checkbox-row">
 				<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[security_header_toggles][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>>
 				<strong><?php echo esc_html( $definition['label'] ); ?></strong>
-				<br><span class="description" style="margin-left:24px;"><?php echo esc_html( $definition['description'] ); ?></span>
+				<br><span class="description adc-checkbox-description"><?php echo esc_html( $definition['description'] ); ?></span>
 			</label>
 		<?php endforeach; ?>
 		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
@@ -1318,7 +1318,7 @@ class ADC_Security_Settings {
 		$result = isset( $_GET['htaccess_result'] ) ? sanitize_key( wp_unslash( $_GET['htaccess_result'] ) ) : '';
 		$error  = isset( $_GET['htaccess_error'] ) ? sanitize_key( wp_unslash( $_GET['htaccess_error'] ) ) : '';
 		?>
-		<div class="adc-htaccess-controls" style="background:#fff; border:1px solid #ccd0d4; margin-top:20px; padding:20px; max-width:900px;">
+		<div class="adc-htaccess-controls adc-admin-panel">
 			<h2>Apply Server Rules</h2>
 			<?php if ( 'applied' === $result ) : ?>
 				<div class="notice notice-success inline"><p>ADC Security fixed .htaccess rules were applied.</p></div>
@@ -1347,12 +1347,12 @@ class ADC_Security_Settings {
 				<?php endif; ?>
 				<p class="description">Save the selected rules above, then apply them explicitly. Revert removes only the ADC Security marker block and preserves other server rules.</p>
 				<div>
-					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block; margin-right:8px;">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="adc-inline-form">
 						<input type="hidden" name="action" value="adc_security_apply_htaccess">
 						<?php wp_nonce_field( 'adc_security_apply_htaccess', 'adc_security_htaccess_nonce' ); ?>
 						<button type="submit" class="button button-primary">Apply Selected Rules</button>
 					</form>
-					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="adc-inline-form adc-inline-form-tight">
 						<input type="hidden" name="action" value="adc_security_revert_htaccess">
 						<?php wp_nonce_field( 'adc_security_revert_htaccess', 'adc_security_htaccess_nonce' ); ?>
 						<button type="submit" class="button button-secondary" onclick="return confirm('Revert only the ADC Security .htaccess block?');">Revert ADC Rules</button>
@@ -1395,7 +1395,7 @@ class ADC_Security_Settings {
 		$result = isset( $_GET['keys_result'] ) ? sanitize_key( wp_unslash( $_GET['keys_result'] ) ) : '';
 		$error  = isset( $_GET['keys_error'] ) ? sanitize_key( wp_unslash( $_GET['keys_error'] ) ) : '';
 		?>
-		<div class="adc-keys-controls" style="background:#fff; border:1px solid #ccd0d4; margin-top:20px; padding:20px; max-width:900px;">
+		<div class="adc-keys-controls adc-admin-panel">
 			<h2>Security Keys</h2>
 			<?php if ( 'regenerated' === $result ) : ?>
 				<div class="notice notice-success inline"><p>ADC Security: new authentication keys were fetched from WordPress.org and applied. All logged-in sessions, including yours, were invalidated.</p></div>
@@ -1412,13 +1412,13 @@ class ADC_Security_Settings {
 			<?php else : ?>
 				<p class="description">Fetches new AUTH_KEY/SALT values from the official WordPress.org secret-key service and replaces the existing definitions in wp-config.php. A backup of the current file is kept until the next regeneration. This immediately invalidates all logged-in sessions, including your own.</p>
 				<div>
-					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block; margin-right:8px;">
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="adc-inline-form">
 						<input type="hidden" name="action" value="adc_security_regenerate_keys">
 						<?php wp_nonce_field( 'adc_security_regenerate_keys', 'adc_security_keys_nonce' ); ?>
 						<button type="submit" class="button button-primary" onclick="return confirm('Regenerate security keys now? This will log out every currently logged-in user, including you.');">Regenerate Security Keys</button>
 					</form>
 					<?php if ( $status['has_backup'] ) : ?>
-						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="adc-inline-form adc-inline-form-tight">
 							<input type="hidden" name="action" value="adc_security_restore_keys">
 							<?php wp_nonce_field( 'adc_security_restore_keys', 'adc_security_keys_nonce' ); ?>
 							<button type="submit" class="button button-secondary" onclick="return confirm('Restore the previous security keys?');">Restore Previous Keys</button>
@@ -1547,10 +1547,10 @@ class ADC_Security_Settings {
 		$table = new ADC_Security_Events_Table();
 		$table->prepare_items();
 		?>
-		<div class="adc-activity-content" style="background:#fff; padding:20px; margin-top:20px; border:1px solid #ccd0d4;">
+		<div class="adc-activity-content adc-admin-panel">
 			<h2><?php esc_html_e( 'Activity Log', 'adc-security' ); ?></h2>
 			<p class="description"><?php esc_html_e( 'Logins, lockouts, user and settings changes, and other security-relevant events.', 'adc-security' ); ?></p>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-bottom:10px;">
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="adc-mb-10">
 				<input type="hidden" name="action" value="adc_security_export_events">
 				<?php wp_nonce_field( 'adc_security_export_events', 'adc_security_events_export_nonce' ); ?>
 				<button type="submit" class="button button-secondary"><?php esc_html_e( 'Export CSV', 'adc-security' ); ?></button>
@@ -1588,7 +1588,7 @@ class ADC_Security_Settings {
 		);
 
 		?>
-		<div class="adc-locked-ips-controls" style="background:#fff; border:1px solid #ccd0d4; margin-top:20px; padding:20px; max-width:900px;">
+		<div class="adc-locked-ips-controls adc-admin-panel">
 			<h2><?php esc_html_e( 'Blocked IP Addresses', 'adc-security' ); ?></h2>
 			<?php if ( empty( $locked_ips ) ) : ?>
 				<p><?php esc_html_e( 'No blocked IP addresses.', 'adc-security' ); ?></p>
@@ -1607,7 +1607,7 @@ class ADC_Security_Settings {
 								<td><?php echo esc_html( $ip ); ?></td>
 								<td><?php echo esc_html( human_time_diff( time(), $expiry ) ); ?></td>
 								<td>
-									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;">
+									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="adc-inline">
 										<input type="hidden" name="action" value="adc_security_unblock_ip">
 										<input type="hidden" name="adc_unblock_ip" value="<?php echo esc_attr( $ip ); ?>">
 										<?php wp_nonce_field( 'adc_security_unblock_ip', 'adc_unblock_nonce' ); ?>
