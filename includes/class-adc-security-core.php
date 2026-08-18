@@ -62,10 +62,38 @@ class ADC_Security_Core {
 
 	/**
 	 * Captcha instance.
-	 * 
+	 *
 	 * @var ADC_Security_Captcha
 	 */
 	public $captcha;
+
+	/**
+	 * Audit-log event recorder instance.
+	 *
+	 * @var ADC_Security_Events
+	 */
+	public $events;
+
+	/**
+	 * Rate limiter instance.
+	 *
+	 * @var ADC_Security_Rate_Limit
+	 */
+	public $rate_limit;
+
+	/**
+	 * File integrity scanner instance.
+	 *
+	 * @var ADC_Security_Integrity
+	 */
+	public $integrity;
+
+	/**
+	 * Plugin/theme health scanner instance.
+	 *
+	 * @var ADC_Security_Vulnerabilities
+	 */
+	public $vulnerabilities;
 
 	/**
 	 * Main ADC Security Instance.
@@ -95,6 +123,8 @@ class ADC_Security_Core {
      * Check for version updates and run cleanup/migration if needed.
      */
     private function check_version() {
+        ADC_Security_Install::maybe_install();
+
         $installed_version = get_option( 'adc_security_version' );
 
         if ( version_compare( $installed_version, ADC_SECURITY_VERSION, '<' ) ) {
@@ -125,6 +155,7 @@ class ADC_Security_Core {
 			'disable_pingbacks'                  => 0,
 			'disable_script_concat'              => 0,
 			'alert_admin_username'               => 1,
+			'rate_limiting_enabled'              => 1,
         );
 
         $changed = false;
@@ -156,6 +187,7 @@ class ADC_Security_Core {
 	 * Include required files.
 	 */
 	private function includes() {
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-ip.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-htaccess.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-keys.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-csp.php';
@@ -165,6 +197,20 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-captcha.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-updater.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-logger.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-score.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-install.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-events.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-stats.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-totp.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-2fa.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-rate-limit.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-integrity.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-vulnerabilities.php';
+
+		if ( is_admin() ) {
+			require_once ADC_SECURITY_DIR . 'includes/class-adc-security-dashboard.php';
+			require_once ADC_SECURITY_DIR . 'includes/class-adc-security-events-table.php';
+		}
 	}
 
 	/**
@@ -176,9 +222,14 @@ class ADC_Security_Core {
 		$this->csp       = new ADC_Security_Csp_Policy();
 		$this->settings  = new ADC_Security_Settings( $this->htaccess );
 		$this->login     = new ADC_Security_Login();
+		$this->rate_limit = new ADC_Security_Rate_Limit( $this->login );
+		$this->integrity      = new ADC_Security_Integrity();
+		$this->vulnerabilities = new ADC_Security_Vulnerabilities();
 		$this->hardening = new ADC_Security_Hardening( $this->csp );
 		$this->captcha   = new ADC_Security_Captcha();
-        
+		$this->events    = new ADC_Security_Events();
+		ADC_Security_2fa::instance();
+
         // Init Updater
         new ADC_Security_Updater();
 	}
@@ -198,7 +249,7 @@ class ADC_Security_Core {
 	 * @return array Modified links.
 	 */
 	public function add_settings_link( $links ) {
-		$settings_link = '<a href="' . admin_url( 'options-general.php?page=adc-security' ) . '">Settings</a>';
+		$settings_link = '<a href="' . admin_url( 'admin.php?page=adc-security' ) . '">Settings</a>';
 		array_unshift( $links, $settings_link );
 		return $links;
 	}

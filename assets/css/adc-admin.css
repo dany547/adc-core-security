@@ -39,3 +39,101 @@
 .adc-overview-content h2 {
     margin-top: 0;
 }
+
+.adc-locked-ips-controls table.widefat th {
+    padding-left: 12px;
+}
+
+.adc-dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.adc-dashboard-card.postbox {
+    margin: 0;
+}
+
+.adc-dashboard-card .inside {
+    margin: 0;
+    padding: 12px 16px 16px;
+}
+
+.adc-score-value {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0 0 12px;
+}
+
+.adc-score-number {
+    font-size: 2.4em;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.adc-grade-a { color: var(--wpds-color-foreground-content-success, #00a32a); }
+.adc-grade-b { color: var(--wpds-color-foreground-content-success, #7ad03a); }
+.adc-grade-c { color: var(--wpds-color-foreground-content-warning, #dba617); }
+.adc-grade-d,
+.adc-grade-f { color: var(--wpds-color-foreground-content-critical, #d63638); }
+
+.adc-score-max,
+.adc-score-grade {
+    color: #666;
+}
+
+.adc-score-checklist,
+.adc-dashboard-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.adc-score-checklist li,
+.adc-dashboard-list li {
+    padding: 4px 0;
+    border-bottom: 1px solid #f0f0f1;
+}
+
+.adc-score-checklist li:last-child,
+.adc-dashboard-list li:last-child {
+    border-bottom: none;
+}
+
+.adc-check-pass .dashicons {
+    color: var(--wpds-color-foreground-content-success, #00a32a);
+}
+
+.adc-check-fail .dashicons {
+    color: var(--wpds-color-foreground-content-warning, #dba617);
+}
+
+.adc-dashboard-warning {
+    color: var(--wpds-color-foreground-content-warning, #dba617);
+}
+
+.adc-log-level {
+    font-weight: 600;
+    margin-right: 4px;
+}
+
+.adc-sparkline {
+    color: var(--wpds-color-foreground-content-brand, var(--wp-admin-theme-color, #2271b1));
+    display: block;
+    margin: 8px 0;
+}
+
+.adc-severity {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.adc-severity-0 { background: #f0f0f1; color: #3c434a; }
+.adc-severity-1 { background: #e5f5fa; color: #0a4b78; }
+.adc-severity-2 { background: #fcf0e0; color: #8a5d00; }
+.adc-severity-3 { background: #fce4e4; color: #8a1f11; }

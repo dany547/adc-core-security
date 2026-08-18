@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.9.0] - 2026-08-18
+### Fixed
+- **"The link you followed has expired" on Login Security save**: the Blocked IP Addresses table rendered a nested `<form>` inside the Settings API's `options.php` form, which browsers flatten, corrupting the settings nonce whenever at least one IP was locked out. The table now renders after the settings form and unblocks via its own `admin-post.php` handler and nonce.
+- Debug export report read the wrong option key for Blocked IPs and always showed "None".
+- The plugin's "Settings" link on the Plugins page pointed at the wrong admin URL.
+- `uninstall.php` now also removes the security-keys backup option and the per-IP/per-token brute-force and captcha transients.
+
+### Added
+- **Dashboard**: the Overview tab is now a real dashboard with four live cards — security score & checklist, login/lockout activity with a 30-day sparkline, users & sessions, and system/integrity status.
+- **Audit Log**: a new `Activity` tab records logins, lockouts, denied IPs, user/role/plugin/theme changes, and settings changes to a dedicated database table, with filtering, pagination, CSV export, and a configurable retention window.
+- **Two-Factor Authentication**: TOTP (RFC 6238) 2FA with QR-less manual-key enrollment, single-use recovery codes, a two-step login flow, per-role enforcement with a grace period, and an Application Passwords opt-out for roles required to use 2FA.
+- **Password Policy**: optional minimum length and a common-password blocklist for new/reset passwords.
+- **File Integrity Scanning**: weekly, chunked comparison of WordPress core files against official checksums, plus a scan of `wp-content/uploads` for PHP files and common webshell patterns.
+- **Plugin Health Scanning**: flags active plugins that have been closed/removed from WordPress.org or haven't been updated in over two years.
+- **Rate Limiting**: per-IP token-bucket throttling (429 + `Retry-After`) for `wp-login.php`, XML-RPC, `?author=` enumeration, and unauthenticated REST reads/writes.
+- **Trusted Proxy Support**: an optional trusted-proxy header (Cloudflare `CF-Connecting-IP`, `X-Forwarded-For`, `X-Real-IP`) with a trusted-proxy IP/CIDR allowlist, so every IP-based feature sees the real visitor IP behind a CDN or load balancer.
+
 ## [1.8.1] - 2026-08-11
 ### Fixed
 - **Custom Login URL Bypass**: `wp-login.php` could still be reached directly by appending any `?adc_login=` parameter, and the custom-login handler trusted the same raw parameter on any front-end URL. Both paths now require the request to have already been validated against the configured slug (via the rewrite rule / `parse_request` match), closing the obscurity bypass.

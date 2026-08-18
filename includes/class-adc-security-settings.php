@@ -44,6 +44,8 @@ class ADC_Security_Settings {
 		add_action( 'admin_post_adc_security_revert_htaccess', array( $this, 'handle_revert_htaccess' ) );
 		add_action( 'admin_post_adc_security_regenerate_keys', array( $this, 'handle_regenerate_keys' ) );
 		add_action( 'admin_post_adc_security_restore_keys', array( $this, 'handle_restore_keys' ) );
+		add_action( 'admin_post_adc_security_unblock_ip', array( $this, 'handle_unblock_ip' ) );
+		add_action( 'admin_post_adc_security_export_events', array( $this, 'handle_export_events' ) );
         // Removed global admin_head hook to prevent interference and fix warnings
 	}
 
@@ -123,18 +125,6 @@ class ADC_Security_Settings {
 		);
 
         add_settings_field(
-            'locked_ips_list',
-            'Blocked IP Addresses',
-            array( $this, 'render_locked_ips_table' ),
-            'adc_security_login',
-            'adc_security_login_section',
-            array(
-                'label_for' => 'locked_ips_list',
-                'description' => 'List of currently locked out IP addresses.',
-            )
-        );
-
-        add_settings_field(
             'login_success_notification',
             'Admin Login Notification',
             array( $this, 'render_checkbox_field' ),
@@ -167,6 +157,48 @@ class ADC_Security_Settings {
             array(
                 'label_for' => 'ip_denylist',
                 'description' => 'One IP, IPv6, or CIDR rule per line. Denied addresses receive a 403 response on all HTTP requests (frontend, wp-admin, REST, XML-RPC).',
+            )
+        );
+
+        add_settings_field(
+            'rate_limiting_enabled',
+            'Rate Limiting',
+            array( $this, 'render_checkbox_field' ),
+            'adc_security_login',
+            'adc_security_login_section',
+            array(
+                'label_for'   => 'rate_limiting_enabled',
+                'description' => 'Throttle wp-login.php, XML-RPC, author-enumeration, and unauthenticated REST requests per IP with a 429 response. Complements brute-force lockout, which tracks failed passwords rather than raw request volume.',
+            )
+        );
+
+        add_settings_field(
+            'trusted_proxy_header',
+            'Trusted Proxy Header',
+            array( $this, 'render_select_field' ),
+            'adc_security_login',
+            'adc_security_login_section',
+            array(
+                'label_for'   => 'trusted_proxy_header',
+                'description' => 'Only set this if the site sits behind a reverse proxy or CDN (e.g. Cloudflare). Every IP-based feature (lockouts, allow/deny lists, rate limiting) will read the visitor IP from this header instead of the connecting IP, but only for connections coming from a trusted proxy IP below.',
+                'options'     => array(
+                    ''                 => 'None (use the connecting IP)',
+                    'CF-Connecting-IP' => 'CF-Connecting-IP (Cloudflare)',
+                    'X-Real-IP'        => 'X-Real-IP',
+                    'X-Forwarded-For'  => 'X-Forwarded-For',
+                ),
+            )
+        );
+
+        add_settings_field(
+            'trusted_proxies',
+            'Trusted Proxy IPs',
+            array( $this, 'render_textarea_field' ),
+            'adc_security_login',
+            'adc_security_login_section',
+            array(
+                'label_for'   => 'trusted_proxies',
+                'description' => 'One IP or CIDR range per line. The trusted proxy header above is only honored when the connecting IP (REMOTE_ADDR) matches one of these. Leave empty to disable header-based IP resolution entirely.',
             )
         );
 
@@ -494,6 +526,105 @@ class ADC_Security_Settings {
                 ),
             )
         );
+
+        add_settings_section(
+            'adc_security_2fa_section',
+            'Two-Factor Authentication Policy',
+            null,
+            'adc_security_2fa'
+        );
+
+        add_settings_field(
+            '2fa_required_roles',
+            'Require 2FA For',
+            array( $this, 'render_role_checkboxes_field' ),
+            'adc_security_2fa',
+            'adc_security_2fa_section',
+            array(
+                'label_for'   => '2fa_required_roles',
+                'description' => 'Users with these roles must have two-factor authentication enabled to keep using wp-admin once the grace period below ends.',
+            )
+        );
+
+        add_settings_field(
+            '2fa_grace_days',
+            'Enrollment Grace Period (Days)',
+            array( $this, 'render_number_field' ),
+            'adc_security_2fa',
+            'adc_security_2fa_section',
+            array(
+                'label_for'   => '2fa_grace_days',
+                'description' => 'Days a required user is allowed to keep using wp-admin before enrolling. 0 enforces immediately.',
+                'min'         => 0,
+            )
+        );
+
+        add_settings_field(
+            '2fa_disable_application_passwords',
+            'Application Passwords',
+            array( $this, 'render_checkbox_field' ),
+            'adc_security_2fa',
+            'adc_security_2fa_section',
+            array(
+                'label_for'   => '2fa_disable_application_passwords',
+                'description' => 'Disable Application Passwords for roles required to use 2FA (otherwise they could bypass 2FA via an application password).',
+            )
+        );
+
+        add_settings_section(
+            'adc_security_password_policy_section',
+            'Password Policy',
+            null,
+            'adc_security_2fa'
+        );
+
+        add_settings_field(
+            'password_min_length',
+            'Minimum Password Length',
+            array( $this, 'render_number_field' ),
+            'adc_security_2fa',
+            'adc_security_password_policy_section',
+            array(
+                'label_for'   => 'password_min_length',
+                'description' => 'New and reset passwords must be at least this many characters. 0 disables the check.',
+                'min'         => 0,
+            )
+        );
+
+        add_settings_field(
+            'password_block_common',
+            'Block Common Passwords',
+            array( $this, 'render_checkbox_field' ),
+            'adc_security_2fa',
+            'adc_security_password_policy_section',
+            array(
+                'label_for'   => 'password_block_common',
+                'description' => 'Reject new and reset passwords found on a list of the most commonly leaked passwords.',
+            )
+        );
+	}
+
+	/**
+	 * Render role checkboxes for the "Require 2FA For" field.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_role_checkboxes_field( $args ) {
+		$options  = get_option( self::OPTION_NAME );
+		$selected = isset( $options[ $args['label_for'] ] ) && is_array( $options[ $args['label_for'] ] ) ? $options[ $args['label_for'] ] : array();
+
+		foreach ( wp_roles()->get_names() as $role_slug => $role_label ) {
+			?>
+			<label style="display:block; margin-bottom:4px;">
+				<input type="checkbox"
+					name="<?php echo esc_attr( self::OPTION_NAME . '[' . $args['label_for'] . '][]' ); ?>"
+					value="<?php echo esc_attr( $role_slug ); ?>"
+					<?php checked( in_array( $role_slug, $selected, true ) ); ?>>
+				<?php echo esc_html( translate_user_role( $role_label ) ); ?>
+			</label>
+			<?php
+		}
+		echo '<p class="description">' . wp_kses_post( $args['description'] ) . '</p>';
 	}
 
 
@@ -521,9 +652,22 @@ class ADC_Security_Settings {
             array( $this, 'render_settings_page' )
         );
         
-        add_action( 'admin_print_scripts-' . $hook, array( $this, 'enqueue_admin_scripts' ) );
+        add_action( 'admin_enqueue_scripts', array( $this, 'maybe_enqueue_admin_scripts' ) );
         add_action( 'admin_head', array( $this, 'add_menu_icon_styles' ) );
 	}
+
+    /**
+     * Enqueue admin assets only on the plugin's own screen.
+     *
+     * @param string $hook_suffix Current admin page hook suffix.
+     */
+    public function maybe_enqueue_admin_scripts( $hook_suffix ) {
+        if ( 'toplevel_page_adc-security' !== $hook_suffix ) {
+            return;
+        }
+
+        $this->enqueue_admin_scripts();
+    }
 
     /**
      * Add custom styles for the menu icon.
@@ -573,7 +717,7 @@ class ADC_Security_Settings {
         check_admin_referer( 'adc_security_export_debug', 'adc_security_export_nonce' );
 
         $options = get_option( self::OPTION_NAME, array() );
-        $blocked_ips = get_option( 'adc_security_blocked_ips', array() );
+        $blocked_ips = get_option( 'adc_locked_ips', array() );
 
         $report = "=== ADC CORE SECURITY DEBUG REPORT ===\r\n";
         $report .= "Generated: " . date( 'Y-m-d H:i:s' ) . "\r\n\r\n";
@@ -759,6 +903,61 @@ class ADC_Security_Settings {
 	}
 
 	/**
+	 * Unblock a locked-out IP address.
+	 */
+	public function handle_unblock_ip() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to modify blocked IP addresses.', 'adc-security' ), 403 );
+		}
+
+		check_admin_referer( 'adc_security_unblock_ip', 'adc_unblock_nonce' );
+
+		if ( ! empty( $_POST['adc_unblock_ip'] ) ) {
+			$ip = sanitize_text_field( wp_unslash( $_POST['adc_unblock_ip'] ) );
+			adc_security()->login->unblock_ip( $ip );
+		}
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'         => 'adc-security',
+					'tab'          => 'login',
+					'adc_notice'   => 'unblocked',
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Export the last 5000 audit-log events as a CSV download.
+	 */
+	public function handle_export_events() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You are not allowed to export the activity log.', 'adc-security' ), 403 );
+		}
+
+		check_admin_referer( 'adc_security_export_events', 'adc_security_events_export_nonce' );
+
+		global $wpdb;
+		$table = ADC_Security_Install::events_table();
+		$rows  = $wpdb->get_results( "SELECT event_time, event_type, severity, user_id, username, ip, object, context FROM {$table} ORDER BY id DESC LIMIT 5000", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName, WordPress.DB.PreparedSQL.NotPrepared
+
+		nocache_headers();
+		header( 'Content-Type: text/csv; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="adc-security-activity-' . gmdate( 'Y-m-d' ) . '.csv"' );
+
+		$output = fopen( 'php://output', 'w' );
+		fputcsv( $output, array( 'Time', 'Type', 'Severity', 'User ID', 'Username', 'IP', 'Object', 'Context' ) );
+		foreach ( (array) $rows as $row ) {
+			fputcsv( $output, $row );
+		}
+		fclose( $output );
+		exit;
+	}
+
+	/**
 	 * Render settings page.
 	 */
 	public function render_settings_page() {
@@ -766,15 +965,6 @@ class ADC_Security_Settings {
             return;
         }
 
-        // Save Options manually if form submitted (because we might be using custom tab logic)
-        // Actually, normal options.php triggers save, so we just need to display.
-        // However, for successful save redirect, we need to preserve the tab.
-        // We can use a hidden field '_wp_http_referer' manipulation or just let WP handle it.
-        // WP redirects back to options-general.php?page=adc-security&settings-updated=true
-        // We need to append the tab if possible, but WP core hardcodes the redirect in options.php.
-        // A common workaround is a JS localized script or just selecting the tab based on a transient or similar.
-        // For simplicity, we rely on GET 'tab'. If it's lost on save, it defaults to overview.
-        
         $active_tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'overview';
 		?>
 		<div class="wrap">
@@ -787,15 +977,20 @@ class ADC_Security_Settings {
             </div>
 
             <nav class="nav-tab-wrapper">
-                <a href="?page=adc-security&tab=overview" class="nav-tab <?php echo 'overview' === $active_tab ? 'nav-tab-active' : ''; ?>">Overview</a>
+                <a href="?page=adc-security&tab=overview" class="nav-tab <?php echo 'overview' === $active_tab ? 'nav-tab-active' : ''; ?>">Dashboard</a>
                 <a href="?page=adc-security&tab=login" class="nav-tab <?php echo 'login' === $active_tab ? 'nav-tab-active' : ''; ?>">Login Security</a>
+                <a href="?page=adc-security&tab=2fa" class="nav-tab <?php echo '2fa' === $active_tab ? 'nav-tab-active' : ''; ?>">Two-Factor Auth</a>
                 <a href="?page=adc-security&tab=captcha" class="nav-tab <?php echo 'captcha' === $active_tab ? 'nav-tab-active' : ''; ?>">Captcha</a>
                 <a href="?page=adc-security&tab=hardening" class="nav-tab <?php echo 'hardening' === $active_tab ? 'nav-tab-active' : ''; ?>">Hardening</a>
+                <a href="?page=adc-security&tab=activity" class="nav-tab <?php echo 'activity' === $active_tab ? 'nav-tab-active' : ''; ?>">Activity</a>
                 <a href="?page=adc-security&tab=support" class="nav-tab <?php echo 'support' === $active_tab ? 'nav-tab-active' : ''; ?>">System & Support</a>
                 <a href="?page=adc-security&tab=changelog" class="nav-tab <?php echo 'changelog' === $active_tab ? 'nav-tab-active' : ''; ?>">Changelog</a>
             </nav>
 
             <?php if ( 'overview' === $active_tab ) : ?>
+                <?php if ( class_exists( 'ADC_Security_Dashboard' ) ) : ?>
+                    <?php ( new ADC_Security_Dashboard( $this->htaccess, $this->keys ) )->render(); ?>
+                <?php endif; ?>
                 <div class="adc-overview-content">
                     <h2>Welcome to ADcelerum Core Security</h2>
                     <p>Originally, this plugin was developed exclusively to provide my clients' websites with essential security features that are missing from WordPress by default. I have now decided to make it public, as I believe these tools can help other users secure their websites more effectively.</p>
@@ -821,6 +1016,8 @@ class ADC_Security_Settings {
                         <a href="https://adcelerum.ro/servicii-marketing/contact-agentia-de-publicitate/" target="_blank" class="button button-primary button-large">Contact Us</a>
                     </div>
                 </div>
+            <?php elseif ( 'activity' === $active_tab ) : ?>
+                <?php $this->render_activity_tab(); ?>
             <?php elseif ( 'support' === $active_tab ) : ?>
                 <div class="adc-support-content" style="background: #fff; padding: 20px; margin-top: 20px; border: 1px solid #ccd0d4;">
                     <h2>System Status & Support</h2>
@@ -888,6 +1085,8 @@ class ADC_Security_Settings {
                         do_settings_sections( 'adc_security_captcha' );
                     } elseif ( 'hardening' === $active_tab ) {
                         do_settings_sections( 'adc_security_hardening' );
+                    } elseif ( '2fa' === $active_tab ) {
+                        do_settings_sections( 'adc_security_2fa' );
                     }
                     
                      submit_button();
@@ -896,6 +1095,12 @@ class ADC_Security_Settings {
 				<?php if ( 'hardening' === $active_tab ) : ?>
 					<?php $this->render_htaccess_actions(); ?>
 					<?php $this->render_keys_actions(); ?>
+				<?php elseif ( 'login' === $active_tab ) : ?>
+					<?php $this->render_locked_ips_table(); ?>
+				<?php elseif ( '2fa' === $active_tab ) : ?>
+					<?php if ( class_exists( 'ADC_Security_2fa' ) ) : ?>
+						<?php ADC_Security_2fa::instance()->render_enrollment_panel( get_current_user_id() ); ?>
+					<?php endif; ?>
 				<?php endif; ?>
             <?php endif; ?>
 		</div>
@@ -960,6 +1165,9 @@ class ADC_Security_Settings {
 			'disable_pingbacks',
 			'disable_script_concat',
 			'alert_admin_username',
+			'2fa_disable_application_passwords',
+			'password_block_common',
+			'rate_limiting_enabled',
 		);
 		foreach ( $checkbox_keys as $key ) {
 			if ( isset( $input[ $key ] ) ) {
@@ -992,6 +1200,21 @@ class ADC_Security_Settings {
 			$new_input['admin_session_expiration_days'] = $days;
 		}
 
+		// 2FA policy: required roles + grace period.
+		if ( isset( $input['2fa_required_roles'] ) && is_array( $input['2fa_required_roles'] ) ) {
+			$valid_roles = array_keys( wp_roles()->get_names() );
+			$new_input['2fa_required_roles'] = array_values( array_intersect( $valid_roles, array_map( 'sanitize_key', $input['2fa_required_roles'] ) ) );
+		} elseif ( isset( $input['2fa_grace_days'] ) ) {
+			// Field group submitted (2fa tab) but all role checkboxes were unchecked.
+			$new_input['2fa_required_roles'] = array();
+		}
+		if ( isset( $input['2fa_grace_days'] ) ) {
+			$new_input['2fa_grace_days'] = min( 90, absint( $input['2fa_grace_days'] ) );
+		}
+		if ( isset( $input['password_min_length'] ) ) {
+			$new_input['password_min_length'] = min( 128, absint( $input['password_min_length'] ) );
+		}
+
 		// IP Allowlist / Denylist: validate, normalise, deduplicate
 		$ip_login = new ADC_Security_Login();
 		foreach ( array( 'ip_allowlist', 'ip_denylist' ) as $list_key ) {
@@ -999,6 +1222,14 @@ class ADC_Security_Settings {
 				$raw = $input[ $list_key ];
 				$new_input[ $list_key ] = $this->sanitize_ip_list( $raw, $ip_login );
 			}
+		}
+
+		if ( isset( $input['trusted_proxy_header'] ) ) {
+			$allowed_headers = array( '', 'CF-Connecting-IP', 'X-Real-IP', 'X-Forwarded-For' );
+			$new_input['trusted_proxy_header'] = in_array( $input['trusted_proxy_header'], $allowed_headers, true ) ? $input['trusted_proxy_header'] : '';
+		}
+		if ( isset( $input['trusted_proxies'] ) ) {
+			$new_input['trusted_proxies'] = $this->sanitize_ip_list( $input['trusted_proxies'], $ip_login );
 		}
 
 		// Flush rewriting rules if custom login slug changes.
@@ -1304,71 +1535,91 @@ class ADC_Security_Settings {
         <?php
     }
 
+	/**
+	 * Render the Activity tab: filterable events list + CSV export.
+	 */
+	public function render_activity_tab() {
+		if ( ! class_exists( 'ADC_Security_Events_Table' ) ) {
+			echo '<p>' . esc_html__( 'The activity log is unavailable.', 'adc-security' ) . '</p>';
+			return;
+		}
+
+		$table = new ADC_Security_Events_Table();
+		$table->prepare_items();
+		?>
+		<div class="adc-activity-content" style="background:#fff; padding:20px; margin-top:20px; border:1px solid #ccd0d4;">
+			<h2><?php esc_html_e( 'Activity Log', 'adc-security' ); ?></h2>
+			<p class="description"><?php esc_html_e( 'Logins, lockouts, user and settings changes, and other security-relevant events.', 'adc-security' ); ?></p>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-bottom:10px;">
+				<input type="hidden" name="action" value="adc_security_export_events">
+				<?php wp_nonce_field( 'adc_security_export_events', 'adc_security_events_export_nonce' ); ?>
+				<button type="submit" class="button button-secondary"><?php esc_html_e( 'Export CSV', 'adc-security' ); ?></button>
+			</form>
+			<form method="get">
+				<input type="hidden" name="page" value="adc-security">
+				<input type="hidden" name="tab" value="activity">
+				<?php $table->display(); ?>
+			</form>
+		</div>
+		<?php
+	}
+
     /**
      * Render Locked IPs Table
      */
-    public function render_locked_ips_table() {
-        // Handle Unblock Action
-        if ( isset( $_POST['adc_unblock_ip'] ) && check_admin_referer( 'adc_unblock_ip_nonce' ) ) {
-            $ip_to_unblock = sanitize_text_field( $_POST['adc_unblock_ip'] );
-            // Get login class instance to call unblock (dirty way, better via dependency injection or static, but works for singleton pattern if used)
-            // Accessing via global or simpler: re-implement unblock here or instantiate.
-            // Since Core holds instances, we can't easily access it without global.
-            // Let's replicate logic or use a helper. 
-            // Better: Load only the needed method logic here since transients are global.
-            
-            $transient_name = 'adc_bf_' . md5( $ip_to_unblock );
-            delete_transient( $transient_name );
-            
-            $locked_ips = get_option( 'adc_locked_ips', array() );
-            if ( isset( $locked_ips[ $ip_to_unblock ] ) ) {
-                unset( $locked_ips[ $ip_to_unblock ] );
-                update_option( 'adc_locked_ips', $locked_ips );
-            }
-            
-            echo '<div class="updated"><p>IP ' . esc_html( $ip_to_unblock ) . ' unblocked.</p></div>';
-        }
+	/**
+	 * Render the blocked-IP table. Rendered outside the options.php form
+	 * (see the login tab branch above) so its own nonced admin-post forms
+	 * never get nested inside, and never share, the settings form's nonce.
+	 */
+	public function render_locked_ips_table() {
+		if ( isset( $_GET['adc_notice'] ) && 'unblocked' === $_GET['adc_notice'] ) {
+			echo '<div class="notice notice-success inline"><p>' . esc_html__( 'IP address unblocked.', 'adc-security' ) . '</p></div>';
+		}
 
-        $locked_ips = get_option( 'adc_locked_ips', array() );
-        
-        // Cleanup expired
-        $updated = false;
-        foreach ( $locked_ips as $ip => $expiry ) {
-            if ( time() > $expiry ) {
-                unset( $locked_ips[ $ip ] );
-                $updated = true;
-            }
-        }
-        if ( $updated ) {
-            update_option( 'adc_locked_ips', $locked_ips );
-        }
+		$locked_ips = get_option( 'adc_locked_ips', array() );
 
-        if ( empty( $locked_ips ) ) {
-            echo '<p>No blocked IP addresses.</p>';
-            return;
-        }
+		// Filter expired entries for display only; do not persist during a render.
+		$locked_ips = array_filter(
+			$locked_ips,
+			static function ( $expiry ) {
+				return $expiry > time();
+			}
+		);
 
-        echo '<table class="widefat fixed striped">';
-        echo '<thead><tr><th>IP Address</th><th>Expires In</th><th>Action</th></tr></thead>';
-        echo '<tbody>';
-        
-        foreach ( $locked_ips as $ip => $expiry ) {
-            $time_left = $expiry - time();
-            $time_str = $time_left > 0 ? human_time_diff( time(), $expiry ) : 'Expired';
-            
-            echo '<tr>';
-            echo '<td>' . esc_html( $ip ) . '</td>';
-            echo '<td>' . esc_html( $time_str ) . '</td>';
-            echo '<td>';
-            echo '<form method="post" style="display:inline;">';
-            echo '<input type="hidden" name="adc_unblock_ip" value="' . esc_attr( $ip ) . '">';
-            wp_nonce_field( 'adc_unblock_ip_nonce' );
-            echo '<button type="submit" class="button button-small button-secondary">Unblock</button>';
-            echo '</form>';
-            echo '</td>';
-            echo '</tr>';
-        }
-        
-        echo '</tbody></table>';
-    }
+		?>
+		<div class="adc-locked-ips-controls" style="background:#fff; border:1px solid #ccd0d4; margin-top:20px; padding:20px; max-width:900px;">
+			<h2><?php esc_html_e( 'Blocked IP Addresses', 'adc-security' ); ?></h2>
+			<?php if ( empty( $locked_ips ) ) : ?>
+				<p><?php esc_html_e( 'No blocked IP addresses.', 'adc-security' ); ?></p>
+			<?php else : ?>
+				<table class="widefat fixed striped">
+					<thead>
+						<tr>
+							<th><?php esc_html_e( 'IP Address', 'adc-security' ); ?></th>
+							<th><?php esc_html_e( 'Expires In', 'adc-security' ); ?></th>
+							<th><?php esc_html_e( 'Action', 'adc-security' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $locked_ips as $ip => $expiry ) : ?>
+							<tr>
+								<td><?php echo esc_html( $ip ); ?></td>
+								<td><?php echo esc_html( human_time_diff( time(), $expiry ) ); ?></td>
+								<td>
+									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline;">
+										<input type="hidden" name="action" value="adc_security_unblock_ip">
+										<input type="hidden" name="adc_unblock_ip" value="<?php echo esc_attr( $ip ); ?>">
+										<?php wp_nonce_field( 'adc_security_unblock_ip', 'adc_unblock_nonce' ); ?>
+										<button type="submit" class="button button-small button-secondary"><?php esc_html_e( 'Unblock', 'adc-security' ); ?></button>
+									</form>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
 }

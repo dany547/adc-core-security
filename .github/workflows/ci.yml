@@ -82,10 +82,23 @@ jobs:
             "includes/class-adc-security-login.php"
             "includes/class-adc-security-hardening.php"
             "includes/class-adc-security-htaccess.php"
+            "includes/class-adc-security-keys.php"
             "includes/class-adc-security-csp.php"
             "includes/class-adc-security-captcha.php"
             "includes/class-adc-security-logger.php"
             "includes/class-adc-security-updater.php"
+            "includes/class-adc-security-score.php"
+            "includes/class-adc-security-dashboard.php"
+            "includes/class-adc-security-install.php"
+            "includes/class-adc-security-events.php"
+            "includes/class-adc-security-stats.php"
+            "includes/class-adc-security-events-table.php"
+            "includes/class-adc-security-totp.php"
+            "includes/class-adc-security-2fa.php"
+            "includes/class-adc-security-ip.php"
+            "includes/class-adc-security-rate-limit.php"
+            "includes/class-adc-security-integrity.php"
+            "includes/class-adc-security-vulnerabilities.php"
           )
           missing=0
           for file in "${required_files[@]}"; do
@@ -102,8 +115,23 @@ jobs:
       - name: Test fixed .htaccess policy
         run: php tests/test-htaccess-rules.php
 
+      - name: Test security key regeneration
+        run: php tests/test-security-keys.php
+
       - name: Test CSP policy
         run: php tests/test-csp-policy.php
+
+      - name: Test security score
+        run: php tests/test-security-score.php
+
+      - name: Test TOTP
+        run: php tests/test-totp.php
+
+      - name: Test IP helper
+        run: php tests/test-ip-helper.php
+
+      - name: Test rate limiter
+        run: php tests/test-rate-limit.php
 
       - name: Check ABSPATH guards
         run: |

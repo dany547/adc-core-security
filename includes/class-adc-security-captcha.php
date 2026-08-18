@@ -151,7 +151,7 @@ class ADC_Security_Captcha {
         $data = array(
             'secret'   => $secret,
             'response' => $response,
-            'remoteip' => $_SERVER['REMOTE_ADDR'],
+            'remoteip' => ADC_Security_Ip::get_client_ip(),
         );
 
         $response = wp_remote_post( $verify_url, array(

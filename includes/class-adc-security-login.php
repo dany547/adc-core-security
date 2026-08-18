@@ -41,22 +41,14 @@ class ADC_Security_Login {
 	// -------------------------------------------------------------------------
 
 	/**
-	 * Return the validated client IP from REMOTE_ADDR or empty string.
+	 * Return the validated client IP, honoring the configured trusted proxy
+	 * (if any). See ADC_Security_Ip for the shared implementation used by
+	 * every IP-based feature in the plugin.
 	 *
 	 * @return string
 	 */
 	private function get_client_ip() {
-		if ( empty( $_SERVER['REMOTE_ADDR'] ) ) {
-			return '';
-		}
-
-		$ip = trim( $_SERVER['REMOTE_ADDR'] );
-
-		if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-			return $ip;
-		}
-
-		return '';
+		return ADC_Security_Ip::get_client_ip();
 	}
 
 	/**
@@ -232,6 +224,13 @@ class ADC_Security_Login {
 		}
 
 		if ( ! empty( $deny_rules ) && $this->ip_matches_list( $ip, $deny_rules ) ) {
+			/**
+			 * Fires when a request is blocked by the IP denylist.
+			 *
+			 * @param string $ip Client IP address.
+			 */
+			do_action( 'adc_security_ip_denied', $ip );
+
 			status_header( 403 );
 			nocache_headers();
 			echo '403 Forbidden';
@@ -245,7 +244,7 @@ class ADC_Security_Login {
 	 * @param string $ip Client IP.
 	 * @return bool
 	 */
-	private function is_ip_allowlisted( $ip ) {
+	public function is_ip_allowlisted( $ip ) {
 		if ( '' === $ip ) {
 			return false;
 		}
@@ -498,6 +497,15 @@ class ADC_Security_Login {
 			$locked_ips          = get_option( 'adc_locked_ips', array() );
 			$locked_ips[ $ip ]   = time() + $expiration;
 			update_option( 'adc_locked_ips', $locked_ips );
+
+			/**
+			 * Fires when an IP address is locked out after too many failed logins.
+			 *
+			 * @param string $ip         Client IP address.
+			 * @param string $username   Username that was attempted.
+			 * @param int    $expiration Lockout duration in seconds.
+			 */
+			do_action( 'adc_security_lockout', $ip, $username, $expiration );
 
 			if ( ! empty( $this->options['login_notification'] ) ) {
 				$admin_email = get_option( 'admin_email' );
