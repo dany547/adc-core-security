@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.9.2] - 2026-08-19
+### Added
+- **Plugin/theme file integrity checks**: the weekly integrity scan now also compares every installed plugin and theme that's hosted on WordPress.org against its official checksums (`downloads.wordpress.org/plugin-checksums` / `theme-checksums`), not just WordPress core. This catches compromised plugin/theme files, which is where most real-world site compromises actually land. Premium/custom packages not on WordPress.org are silently skipped (no data available), same as core files would be if unreachable.
+- **Have I Been Pwned password check**: opt-in check of new/reset passwords against the HIBP breached-password database using k-anonymity (only a 5-character SHA-1 hash prefix is sent; the password itself never leaves the server). Fails open on any API/network error so an HIBP outage never blocks logins.
+- **Cron health monitoring**: the dashboard now warns when the audit-log cleanup, file integrity scan, or plugin health scan haven't run on schedule — the most common cause is WP-Cron being blocked or `DISABLE_WP_CRON` set without a real system cron replacing it, which would otherwise silently disable these features.
+
 ## [1.9.1] - 2026-08-18
 ### Changed
 - **Documentation**: README now documents the Dashboard, 2FA, audit log, rate limiting, trusted-proxy support, and file integrity/plugin health scanning added in 1.9.0, plus configuration notes for the trusted proxy header and 2FA enrollment/recovery codes.

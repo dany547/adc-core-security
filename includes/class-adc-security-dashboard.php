@@ -54,7 +54,7 @@ class ADC_Security_Dashboard {
 		if ( class_exists( 'ADC_Security_Integrity' ) ) {
 			$integrity_result = ADC_Security_Integrity::get_last_result();
 			if ( ! empty( $integrity_result['completed_at'] ) ) {
-				$score_extra['integrity_issues'] = count( $integrity_result['core_findings'] ) + count( $integrity_result['upload_findings'] );
+				$score_extra['integrity_issues'] = count( $integrity_result['core_findings'] ) + count( $integrity_result['plugin_theme_findings'] ) + count( $integrity_result['upload_findings'] );
 			}
 		}
 		if ( class_exists( 'ADC_Security_Vulnerabilities' ) ) {
@@ -288,7 +288,7 @@ class ADC_Security_Dashboard {
 							<?php if ( empty( $integrity['completed_at'] ) ) : ?>
 								<strong><?php esc_html_e( 'Not run yet', 'adc-security' ); ?></strong>
 							<?php else : ?>
-								<?php $issue_count = count( $integrity['core_findings'] ) + count( $integrity['upload_findings'] ); ?>
+								<?php $issue_count = count( $integrity['core_findings'] ) + count( $integrity['plugin_theme_findings'] ) + count( $integrity['upload_findings'] ); ?>
 								<strong class="<?php echo $issue_count > 0 ? 'adc-dashboard-warning' : ''; ?>">
 									<?php
 									echo 0 === $issue_count
@@ -320,6 +320,7 @@ class ADC_Security_Dashboard {
 						</li>
 					<?php endif; ?>
 				</ul>
+				<?php $this->render_cron_health_notice(); ?>
 				<h4><?php esc_html_e( 'Recent activity', 'adc-security' ); ?></h4>
 				<?php if ( empty( $logs ) ) : ?>
 					<p class="description"><?php esc_html_e( 'No recent errors or warnings.', 'adc-security' ); ?></p>
@@ -336,6 +337,46 @@ class ADC_Security_Dashboard {
 				<?php endif; ?>
 			</div>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Warn when a background scan/cron appears stuck (WP-Cron never fires,
+	 * or fires far less often than expected — common on low-traffic or
+	 * misconfigured sites).
+	 */
+	private function render_cron_health_notice() {
+		if ( ! class_exists( 'ADC_Security_Cron_Health' ) || ! ADC_Security_Cron_Health::any_overdue() ) {
+			return;
+		}
+
+		$labels = array(
+			'adc_security_prune_events'   => __( 'audit-log cleanup', 'adc-security' ),
+			'adc_security_integrity_scan' => __( 'file integrity scan', 'adc-security' ),
+			'adc_security_vuln_scan'      => __( 'plugin health scan', 'adc-security' ),
+		);
+
+		$overdue_labels = array();
+		foreach ( ADC_Security_Cron_Health::get_status() as $hook => $hook_status ) {
+			if ( $hook_status['overdue'] ) {
+				$overdue_labels[] = isset( $labels[ $hook ] ) ? $labels[ $hook ] : $hook;
+			}
+		}
+
+		if ( empty( $overdue_labels ) ) {
+			return;
+		}
+		?>
+		<p class="adc-dashboard-warning">
+			<span class="dashicons dashicons-warning"></span>
+			<?php
+			printf(
+				/* translators: %s: comma-separated list of scan names */
+				esc_html__( 'WP-Cron looks stuck: %s haven\'t run on schedule. If this site has real traffic, check whether wp-cron.php is being blocked or DISABLE_WP_CRON is set without a real system cron replacing it.', 'adc-security' ),
+				esc_html( implode( ', ', $overdue_labels ) )
+			);
+			?>
+		</p>
 		<?php
 	}
 }

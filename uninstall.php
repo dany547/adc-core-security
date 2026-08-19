@@ -67,6 +67,12 @@ $wpdb->query(
 delete_option( 'adc_security_integrity_state' );
 delete_option( 'adc_security_integrity_result' );
 delete_option( 'adc_security_vuln_result' );
+delete_option( 'adc_security_cron_last_run' );
 wp_clear_scheduled_hook( 'adc_security_integrity_scan' );
 wp_clear_scheduled_hook( 'adc_security_integrity_tick' );
 wp_clear_scheduled_hook( 'adc_security_vuln_scan' );
+
+// Remove cached plugin/theme checksum lookups (dynamic per-slug+version names).
+$wpdb->query(
+	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_cksum\_%' OR option_name LIKE '\_transient\_timeout\_adc\_cksum\_%'"
+);

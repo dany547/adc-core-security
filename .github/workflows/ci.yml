@@ -99,6 +99,7 @@ jobs:
             "includes/class-adc-security-rate-limit.php"
             "includes/class-adc-security-integrity.php"
             "includes/class-adc-security-vulnerabilities.php"
+            "includes/class-adc-security-cron-health.php"
           )
           missing=0
           for file in "${required_files[@]}"; do
@@ -132,6 +133,9 @@ jobs:
 
       - name: Test rate limiter
         run: php tests/test-rate-limit.php
+
+      - name: Test HIBP matcher
+        run: php tests/test-hibp.php
 
       - name: Check ABSPATH guards
         run: |

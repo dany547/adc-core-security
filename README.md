@@ -11,9 +11,9 @@ ADC Core Security is a lightweight WordPress plugin for protecting login access,
 - **IP allowlist and denylist**: Control access with IPv4, IPv6, and CIDR rules. Allowlisted addresses bypass denylist and lockout checks.
 - **Trusted proxy support**: Optionally resolve the real visitor IP from a trusted CDN/proxy header (Cloudflare `CF-Connecting-IP`, `X-Forwarded-For`, `X-Real-IP`) so every IP-based feature works correctly behind a CDN or load balancer.
 - **Two-factor authentication (TOTP)**: Standard 30-second time-based codes (compatible with Google Authenticator, Aegis, 1Password, etc.), single-use recovery codes, optional per-role enforcement with a grace period, and an Application Passwords opt-out for roles required to use 2FA.
-- **Password policy**: Optional minimum password length and a common-password blocklist for new/reset passwords.
+- **Password policy**: Optional minimum password length, a common-password blocklist, and an opt-in check against the Have I Been Pwned breach database (k-anonymity — only a hash prefix is ever sent, never the password).
 - **Audit log**: Logins, lockouts, denied IPs, user/role changes, plugin/theme activity, and settings changes recorded to a dedicated, filterable Activity log with CSV export and a configurable retention window.
-- **File integrity scanning**: Weekly comparison of WordPress core files against official WordPress.org checksums, plus a scan of `wp-content/uploads` for PHP files and common webshell patterns.
+- **File integrity scanning**: Weekly comparison of WordPress core files, and every installed plugin/theme that's hosted on WordPress.org, against their official checksums — plus a scan of `wp-content/uploads` for PHP files and common webshell patterns. Cron health is monitored too: the dashboard warns if these background scans stop firing (a common symptom of WP-Cron being blocked or misconfigured).
 - **Plugin health scanning**: Flags active plugins that have been closed/removed from the WordPress.org directory or haven't been updated in over two years.
 - **Administrator login alerts**: Email notifications when an administrator signs in.
 - **User enumeration protection**: Block public `?author=N` requests and unauthenticated REST user endpoints.

@@ -738,6 +738,67 @@ class ADC_Security_2fa {
 				__( '<strong>Error</strong>: That password is on a list of commonly leaked passwords and cannot be used.', 'adc-security' )
 			);
 		}
+
+		if ( ! empty( $options['password_check_hibp'] ) && self::is_pwned_password( $password ) ) {
+			$errors->add(
+				'adc_security_password_pwned',
+				__( '<strong>Error</strong>: That password has appeared in a known data breach. Please choose a different one.', 'adc-security' )
+			);
+		}
+	}
+
+	/**
+	 * Check a password against the Have I Been Pwned breached-password list
+	 * using k-anonymity: only the first 5 characters of the SHA-1 hash are
+	 * ever sent, so the API never sees the actual password. Fails open (does
+	 * not block) on any network/API error, so an outage never locks users out.
+	 *
+	 * @param string $password Candidate plaintext password.
+	 * @return bool
+	 */
+	private static function is_pwned_password( $password ) {
+		$hash   = strtoupper( sha1( $password ) );
+		$prefix = substr( $hash, 0, 5 );
+		$suffix = substr( $hash, 5 );
+
+		$response = wp_remote_get(
+			'https://api.pwnedpasswords.com/range/' . $prefix,
+			array(
+				'timeout' => 4,
+				'headers' => array( 'Add-Padding' => 'true' ),
+			)
+		);
+
+		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			return false;
+		}
+
+		return self::suffix_found_in_range_response( $suffix, wp_remote_retrieve_body( $response ) );
+	}
+
+	/**
+	 * Pure matcher for the HIBP range-API response body, split out so it can
+	 * be unit tested without a WordPress environment (tests/test-hibp.php).
+	 * Each line is "SUFFIX:COUNT"; a count of 0 marks decoy padding
+	 * (Add-Padding: true) and must not be treated as a real match.
+	 *
+	 * @param string $suffix Uppercase 35-character SHA-1 suffix to look for.
+	 * @param string $body   Raw HIBP range API response body.
+	 * @return bool
+	 */
+	public static function suffix_found_in_range_response( $suffix, $body ) {
+		foreach ( explode( "\n", $body ) as $line ) {
+			$line = trim( $line );
+			if ( '' === $line || false === strpos( $line, ':' ) ) {
+				continue;
+			}
+			list( $candidate_suffix, $count ) = explode( ':', $line, 2 );
+			if ( hash_equals( $suffix, trim( $candidate_suffix ) ) && (int) $count > 0 ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

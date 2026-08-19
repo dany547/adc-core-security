@@ -37,6 +37,10 @@ class ADC_Security_Vulnerabilities {
 	 * Run the scan and store results. Safe to call directly (e.g. "Scan Now").
 	 */
 	public function run_scan() {
+		if ( class_exists( 'ADC_Security_Cron_Health' ) ) {
+			ADC_Security_Cron_Health::record( self::CRON_HOOK );
+		}
+
 		if ( ! function_exists( 'get_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}

@@ -198,6 +198,7 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-updater.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-logger.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-score.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-cron-health.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-install.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-events.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-stats.php';

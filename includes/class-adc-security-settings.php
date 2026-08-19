@@ -602,6 +602,18 @@ class ADC_Security_Settings {
                 'description' => 'Reject new and reset passwords found on a list of the most commonly leaked passwords.',
             )
         );
+
+        add_settings_field(
+            'password_check_hibp',
+            'Check Against Known Breaches (HIBP)',
+            array( $this, 'render_checkbox_field' ),
+            'adc_security_2fa',
+            'adc_security_password_policy_section',
+            array(
+                'label_for'   => 'password_check_hibp',
+                'description' => 'Reject new and reset passwords found in the Have I Been Pwned breach database. Privacy: only the first 5 characters of the password\'s SHA-1 hash are ever sent to the API (k-anonymity) — the actual password never leaves the server. Opt-in because it makes an external HTTPS request on every password change.',
+            )
+        );
 	}
 
 	/**
@@ -1167,6 +1179,7 @@ class ADC_Security_Settings {
 			'alert_admin_username',
 			'2fa_disable_application_passwords',
 			'password_block_common',
+			'password_check_hibp',
 			'rate_limiting_enabled',
 		);
 		foreach ( $checkbox_keys as $key ) {

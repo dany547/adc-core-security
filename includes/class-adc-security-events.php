@@ -200,6 +200,10 @@ class ADC_Security_Events {
 	 * Also clears expired entries from the adc_locked_ips display list.
 	 */
 	public function prune() {
+		if ( class_exists( 'ADC_Security_Cron_Health' ) ) {
+			ADC_Security_Cron_Health::record( self::CRON_HOOK );
+		}
+
 		global $wpdb;
 
 		$table          = ADC_Security_Install::events_table();

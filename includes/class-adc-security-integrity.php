@@ -2,11 +2,16 @@
 /**
  * ADC Security Integrity Class
  *
- * Two integrity checks, both budgeted so they don't time out on shared
- * hosting:
+ * Integrity checks, all budgeted so they don't time out on shared hosting:
  *  1. Core file checksums, compared against api.wordpress.org's official
  *     list for the running WP version.
- *  2. A scan of wp-content/uploads for .php files and common webshell /
+ *  2. Per-plugin and per-theme file checksums, compared against
+ *     downloads.wordpress.org's official checksums for installed plugins/
+ *     themes that are hosted on WordPress.org (skipped for premium/custom
+ *     ones, same as they'd be skipped by any checksum-based check). This
+ *     matters more than the core check in practice: most compromises land
+ *     in plugin code, not core.
+ *  3. A scan of wp-content/uploads for .php files and common webshell /
  *     obfuscation patterns (uploads should never contain executable PHP).
  *
  * A full pass is kicked off weekly and processes a bounded batch of files
@@ -26,8 +31,10 @@ class ADC_Security_Integrity {
 	const TICK_HOOK       = 'adc_security_integrity_tick';
 	const STATE_OPTION    = 'adc_security_integrity_state';
 	const RESULT_OPTION   = 'adc_security_integrity_result';
-	const FILES_PER_TICK  = 150;
-	const TIME_BUDGET_SEC = 4;
+	const FILES_PER_TICK   = 150;
+	const PACKAGES_PER_TICK = 5;
+	const TIME_BUDGET_SEC  = 4;
+	const CHECKSUM_CACHE_TTL = DAY_IN_SECONDS;
 
 	/**
 	 * Regexes flagging common webshell / obfuscation idioms. Intentionally
@@ -90,15 +97,20 @@ class ADC_Security_Integrity {
 		update_option(
 			self::STATE_OPTION,
 			array(
-				'status'         => 'running',
-				'started_at'     => time(),
-				'stage'          => 'core',
-				'queue'          => array(),
-				'core_findings'  => array(),
-				'upload_findings' => array(),
+				'status'               => 'running',
+				'started_at'           => time(),
+				'stage'                => 'core',
+				'queue'                => array(),
+				'core_findings'        => array(),
+				'plugin_theme_findings' => array(),
+				'upload_findings'      => array(),
 			),
 			false
 		);
+
+		if ( class_exists( 'ADC_Security_Cron_Health' ) ) {
+			ADC_Security_Cron_Health::record( self::WEEKLY_HOOK );
+		}
 
 		$this->schedule_tick();
 	}
@@ -116,6 +128,10 @@ class ADC_Security_Integrity {
 
 		if ( 'core' === $state['stage'] ) {
 			$state = $this->tick_core_checksums( $state, $deadline );
+		} elseif ( 'plugins' === $state['stage'] ) {
+			$state = $this->tick_package_checksums( $state, $deadline, 'plugin' );
+		} elseif ( 'themes' === $state['stage'] ) {
+			$state = $this->tick_package_checksums( $state, $deadline, 'theme' );
 		} elseif ( 'uploads' === $state['stage'] ) {
 			$state = $this->tick_uploads_scan( $state, $deadline );
 		}
@@ -157,8 +173,8 @@ class ADC_Security_Integrity {
 		$checksums  = get_core_checksums( $wp_version, $locale );
 
 		if ( ! is_array( $checksums ) || empty( $checksums ) ) {
-			// Checksums API unreachable; skip straight to the uploads scan.
-			$state['stage'] = 'uploads';
+			// Checksums API unreachable; skip straight to the plugins stage.
+			$state['stage'] = 'plugins';
 			$state['queue'] = array();
 			return $state;
 		}
@@ -192,7 +208,7 @@ class ADC_Security_Integrity {
 		}
 
 		if ( empty( $checksums ) ) {
-			$state['stage'] = 'uploads';
+			$state['stage'] = 'plugins';
 			$state['queue'] = array();
 		}
 
@@ -200,7 +216,159 @@ class ADC_Security_Integrity {
 	}
 
 	// -------------------------------------------------------------------------
-	// Stage 2: uploads scan
+	// Stage 2: per-plugin / per-theme checksums
+	// -------------------------------------------------------------------------
+
+	/**
+	 * @param array  $state    Current scan state.
+	 * @param float  $deadline microtime() budget to stop by.
+	 * @param string $type     'plugin' or 'theme'.
+	 * @return array Updated state.
+	 */
+	private function tick_package_checksums( array $state, $deadline, $type ) {
+		if ( empty( $state['queue'] ) && empty( $state['queue_built'] ) ) {
+			$state['queue']       = 'plugin' === $type ? $this->build_plugin_queue() : $this->build_theme_queue();
+			$state['queue_built'] = true;
+		}
+
+		$processed = 0;
+		while ( ! empty( $state['queue'] ) ) {
+			if ( microtime( true ) > $deadline || $processed >= self::PACKAGES_PER_TICK ) {
+				return $state;
+			}
+
+			$item = array_shift( $state['queue'] );
+			$this->check_package( $item, $state );
+			++$processed;
+		}
+
+		$state['stage']       = 'plugin' === $type ? 'themes' : 'uploads';
+		$state['queue_built'] = false;
+		return $state;
+	}
+
+	/**
+	 * @return array List of {type, slug, version, dir} for every installed plugin.
+	 */
+	private function build_plugin_queue() {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		$queue = array();
+		foreach ( get_plugins() as $plugin_file => $data ) {
+			if ( false === strpos( $plugin_file, '/' ) ) {
+				continue; // Single-file plugin; no reliable checksum path mapping.
+			}
+
+			$slug = strtok( $plugin_file, '/' );
+			$queue[] = array(
+				'type'    => 'plugin',
+				'slug'    => $slug,
+				'version' => isset( $data['Version'] ) ? $data['Version'] : '',
+				'dir'     => trailingslashit( WP_PLUGIN_DIR ) . $slug,
+				'label'   => isset( $data['Name'] ) ? $data['Name'] : $slug,
+			);
+		}
+		return $queue;
+	}
+
+	/**
+	 * @return array List of {type, slug, version, dir} for every installed theme.
+	 */
+	private function build_theme_queue() {
+		$queue = array();
+		foreach ( wp_get_themes() as $slug => $theme ) {
+			$queue[] = array(
+				'type'    => 'theme',
+				'slug'    => $slug,
+				'version' => (string) $theme->get( 'Version' ),
+				'dir'     => $theme->get_stylesheet_directory(),
+				'label'   => (string) $theme->get( 'Name' ),
+			);
+		}
+		return $queue;
+	}
+
+	/**
+	 * Fetch official checksums for one plugin/theme and compare local files.
+	 * Silently skipped (no finding) if the package isn't on WordPress.org or
+	 * the checksums API doesn't have data for it — premium/custom code can't
+	 * be checked this way.
+	 *
+	 * @param array $item  {type, slug, version, dir, label}.
+	 * @param array $state State array, updated by reference.
+	 */
+	private function check_package( array $item, array &$state ) {
+		if ( '' === $item['version'] || ! is_dir( $item['dir'] ) ) {
+			return;
+		}
+
+		$checksums = $this->get_package_checksums( $item['type'], $item['slug'], $item['version'] );
+		if ( ! is_array( $checksums ) || empty( $checksums ) ) {
+			return;
+		}
+
+		foreach ( $checksums as $relative_path => $hashes ) {
+			$full_path = trailingslashit( $item['dir'] ) . ltrim( $relative_path, '/' );
+
+			// A path can have more than one valid hash (e.g. readme.txt is
+			// sometimes rewritten during packaging), so normalize to a list.
+			$expected = isset( $hashes['md5'] ) ? (array) $hashes['md5'] : array();
+			$expected = array_filter( $expected );
+			if ( empty( $expected ) ) {
+				continue;
+			}
+
+			if ( ! file_exists( $full_path ) ) {
+				$state['plugin_theme_findings'][] = array(
+					'path'   => $item['type'] . ': ' . $item['label'] . ' — ' . $relative_path,
+					'reason' => 'missing',
+				);
+				continue;
+			}
+
+			if ( ! in_array( md5_file( $full_path ), $expected, true ) ) {
+				$state['plugin_theme_findings'][] = array(
+					'path'   => $item['type'] . ': ' . $item['label'] . ' — ' . $relative_path,
+					'reason' => 'modified',
+				);
+			}
+		}
+	}
+
+	/**
+	 * @param string $type    'plugin' or 'theme'.
+	 * @param string $slug    Plugin/theme slug.
+	 * @param string $version Installed version.
+	 * @return array|null Map of relative path => {md5, sha256}, or null if unavailable.
+	 */
+	private function get_package_checksums( $type, $slug, $version ) {
+		$cache_key = 'adc_cksum_' . $type . '_' . md5( $slug . '|' . $version );
+		$cached    = get_transient( $cache_key );
+		if ( false !== $cached ) {
+			return '' === $cached ? null : $cached;
+		}
+
+		$path = 'plugin' === $type ? 'plugin-checksums' : 'theme-checksums';
+		$url  = sprintf( 'https://downloads.wordpress.org/%s/%s/%s.json', $path, rawurlencode( $slug ), rawurlencode( $version ) );
+
+		$response = wp_remote_get( $url, array( 'timeout' => 8 ) );
+		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			set_transient( $cache_key, '', self::CHECKSUM_CACHE_TTL );
+			return null;
+		}
+
+		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		$files = isset( $data['files'] ) && is_array( $data['files'] ) ? $data['files'] : null;
+
+		set_transient( $cache_key, null === $files ? '' : $files, self::CHECKSUM_CACHE_TTL );
+
+		return $files;
+	}
+
+	// -------------------------------------------------------------------------
+	// Stage 3: uploads scan
 	// -------------------------------------------------------------------------
 
 	/**
@@ -289,17 +457,19 @@ class ADC_Security_Integrity {
 		$previous = get_option( self::RESULT_OPTION, array() );
 
 		$result = array(
-			'completed_at'     => time(),
-			'core_findings'    => $state['core_findings'],
-			'upload_findings'  => $state['upload_findings'],
+			'completed_at'          => time(),
+			'core_findings'         => $state['core_findings'],
+			'plugin_theme_findings' => isset( $state['plugin_theme_findings'] ) ? $state['plugin_theme_findings'] : array(),
+			'upload_findings'       => $state['upload_findings'],
 		);
 
 		update_option( self::RESULT_OPTION, $result, false );
 		update_option( self::STATE_OPTION, array( 'status' => 'idle' ), false );
 
 		$previous_count = ( isset( $previous['core_findings'] ) ? count( $previous['core_findings'] ) : 0 )
+			+ ( isset( $previous['plugin_theme_findings'] ) ? count( $previous['plugin_theme_findings'] ) : 0 )
 			+ ( isset( $previous['upload_findings'] ) ? count( $previous['upload_findings'] ) : 0 );
-		$current_count = count( $result['core_findings'] ) + count( $result['upload_findings'] );
+		$current_count = count( $result['core_findings'] ) + count( $result['plugin_theme_findings'] ) + count( $result['upload_findings'] );
 
 		if ( $current_count > 0 && $current_count !== $previous_count ) {
 			$this->send_alert( $result );
@@ -319,7 +489,7 @@ class ADC_Security_Integrity {
 	 */
 	private function send_alert( array $result ) {
 		$admin_email = get_option( 'admin_email' );
-		$count       = count( $result['core_findings'] ) + count( $result['upload_findings'] );
+		$count       = count( $result['core_findings'] ) + count( $result['plugin_theme_findings'] ) + count( $result['upload_findings'] );
 
 		$message = sprintf(
 			/* translators: %d: number of findings */
@@ -337,9 +507,10 @@ class ADC_Security_Integrity {
 		return get_option(
 			self::RESULT_OPTION,
 			array(
-				'completed_at'    => 0,
-				'core_findings'   => array(),
-				'upload_findings' => array(),
+				'completed_at'          => 0,
+				'core_findings'         => array(),
+				'plugin_theme_findings' => array(),
+				'upload_findings'       => array(),
 			)
 		);
 	}
