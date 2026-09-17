@@ -23,6 +23,8 @@ $GLOBALS['test_state'] = array(
 	'transients' => array(),
 	'hooks'      => array(),
 	'meta'       => array(),
+	'meta_boxes' => array(),
+	'orders'     => array(),
 	'ip'         => '203.0.113.10',
 	'is_admin'   => false,
 	'logged_in'  => false,
@@ -30,7 +32,29 @@ $GLOBALS['test_state'] = array(
 );
 
 function get_option( $name, $default = false ) {
-	return array_key_exists( $name, $GLOBALS['test_state']['options'] ) ? $GLOBALS['test_state']['options'][ $name ] : $default;
+	if ( array_key_exists( $name, $GLOBALS['test_state']['options'] ) ) {
+		return $GLOBALS['test_state']['options'][ $name ];
+	}
+	if ( 'date_format' === $name ) {
+		return 'Y-m-d';
+	}
+	if ( 'time_format' === $name ) {
+		return 'H:i';
+	}
+	return $default;
+}
+function add_meta_box( $id, $title, $callback, $screen = null, $context = 'advanced', $priority = 'default' ) {
+	$GLOBALS['test_state']['meta_boxes'][] = array(
+		'id'       => $id,
+		'title'    => $title,
+		'callback' => $callback,
+		'screen'   => $screen,
+		'context'  => $context,
+		'priority' => $priority,
+	);
+}
+function wc_get_order( $id ) {
+	return isset( $GLOBALS['test_state']['orders'][ $id ] ) ? $GLOBALS['test_state']['orders'][ $id ] : false;
 }
 function get_transient( $key ) {
 	$state = $GLOBALS['test_state']['transients'];
@@ -96,10 +120,10 @@ function wp_date( $format, $timestamp = null ) {
 	return gmdate( $format, $timestamp );
 }
 function is_checkout() {
-	return true;
+	return isset( $GLOBALS['test_state']['is_checkout'] ) ? (bool) $GLOBALS['test_state']['is_checkout'] : true;
 }
 function is_cart() {
-	return true;
+	return isset( $GLOBALS['test_state']['is_cart'] ) ? (bool) $GLOBALS['test_state']['is_cart'] : true;
 }
 function is_wp_error( $thing ) {
 	return $thing instanceof WP_Error;
@@ -148,6 +172,12 @@ class WP_Error {
 		}
 
 		return isset( $this->data[ $code ] ) ? $this->data[ $code ] : null;
+	}
+}
+class WP_Post {
+	public $ID;
+	public function __construct( $id = 1 ) {
+		$this->ID = $id;
 	}
 }
 class WP_User {
@@ -366,7 +396,14 @@ $woo     = new ADC_Security_Woocommerce( $login, $captcha );
 $reset = function ( $overrides = array() ) use ( $defaults, $woo ) {
 	$GLOBALS['test_state']['options']['adc_security_options'] = array_merge( $defaults, $overrides );
 	$GLOBALS['test_state']['transients']                      = array();
+	$GLOBALS['test_state']['meta_boxes']                      = array();
+	$GLOBALS['test_state']['orders']                          = array();
+	$GLOBALS['test_state']['is_checkout']                     = true;
+	$GLOBALS['test_state']['is_cart']                         = true;
 	$_POST                                                    = array();
+	if ( function_exists( 'WC' ) && WC() ) {
+		WC()->session = new WC_Session();
+	}
 	$woo->init();
 };
 
@@ -393,6 +430,8 @@ $check( 'classic checkout validation hook registered', isset( $hooks['woocommerc
 $check( 'store API validation hook registered', isset( $hooks['woocommerce_store_api_checkout_update_customer_from_request'] ) );
 $check( 'classic order recording hook registered', isset( $hooks['woocommerce_checkout_order_created'] ) );
 $check( 'store API order recording hook registered', isset( $hooks['woocommerce_store_api_checkout_order_processed'] ) );
+$check( 'order security metabox registered', isset( $hooks['add_meta_boxes'] ) );
+$check( 'store API add-to-cart stamp hook registered', isset( $hooks['woocommerce_store_api_validate_add_to_cart'] ) );
 $check( 'classic checkout honeypot rendered', isset( $hooks['woocommerce_checkout_before_customer_details'] ) );
 $check( 'my account registration honeypot rendered', isset( $hooks['woocommerce_register_form'] ) );
 $check( 'WordPress registration honeypot rendered', isset( $hooks['register_form'] ) );
@@ -463,6 +502,15 @@ $stamp = time() - 30;
 WC()->session->set( ADC_Security_Woocommerce::SESSION_STARTED_KEY, $stamp );
 $woo->mark_session_started();
 $check( 'session stamp is not overwritten', $stamp === WC()->session->get( ADC_Security_Woocommerce::SESSION_STARTED_KEY ) );
+
+// A missing monitor-mode key (upgrade before defaults migrate) must not block.
+$reset();
+unset( $GLOBALS['test_state']['options']['adc_security_options']['woo_monitor_mode'] );
+$woo->init();
+$_POST['adc_woo_hp'] = 'filled-by-a-bot';
+$errors              = new WP_Error();
+$woo->validate_classic_checkout( array( 'billing_email' => 'buyer@example.com' ), $errors );
+$check( 'missing monitor-mode key does not block', array() === $errors->errors );
 
 // Monitor mode logs without blocking.
 $reset( array( 'woo_monitor_mode' => 1 ) );
@@ -639,6 +687,43 @@ $woo->render_order_security_info( $clean_order );
 $empty_html = (string) ob_get_clean();
 $check( 'order screen stays quiet without security data', '' === $empty_html );
 
+$reset();
+$GLOBALS['test_state']['meta_boxes'] = array();
+$woo->register_order_metabox();
+$check(
+	'order security metabox uses the legacy shop_order screen without HPOS',
+	isset( $GLOBALS['test_state']['meta_boxes'][0] )
+		&& 'shop_order' === $GLOBALS['test_state']['meta_boxes'][0]['screen']
+		&& 'side' === $GLOBALS['test_state']['meta_boxes'][0]['context']
+);
+
+$ob_started = ob_start();
+$woo->render_order_security_metabox( $flagged );
+$metabox_html = (string) ob_get_clean();
+$check( 'metabox renders from a WC_Order', false !== strpos( $metabox_html, '203.0.113.10' ) );
+
+$GLOBALS['test_state']['orders'][88] = $flagged;
+$ob_started = ob_start();
+$woo->render_order_security_metabox( new WP_Post( 88 ) );
+$post_html = (string) ob_get_clean();
+$check( 'metabox renders from a WP_Post via wc_get_order', false !== strpos( $post_html, 'honeypot' ) );
+
+$reset( array( 'woo_checkout_min_seconds' => 5 ) );
+$GLOBALS['test_state']['is_checkout'] = false;
+$GLOBALS['test_state']['is_cart']     = false;
+WC()->session                         = new WC_Session();
+$woo->validate_classic_add_to_cart( true, 42 );
+$check( 'classic add-to-cart stamps the session off the cart page', (int) WC()->session->get( ADC_Security_Woocommerce::SESSION_STARTED_KEY ) > 0 );
+
+$reset( array( 'woo_checkout_min_seconds' => 5 ) );
+$GLOBALS['test_state']['is_checkout'] = false;
+$GLOBALS['test_state']['is_cart']     = false;
+WC()->session                         = new WC_Session();
+$woo->stamp_store_api_add_to_cart( null, array() );
+$check( 'store API add-to-cart stamps the session', (int) WC()->session->get( ADC_Security_Woocommerce::SESSION_STARTED_KEY ) > 0 );
+$GLOBALS['test_state']['is_checkout'] = true;
+$GLOBALS['test_state']['is_cart']     = true;
+
 // ---------------------------------------------------------------------------
 // Store API (Checkout block) rules
 // ---------------------------------------------------------------------------
@@ -720,11 +805,11 @@ $check( 'account created renders the registration date', '2026-01-02 03:04' === 
 $check( 'missing last login renders a dash', '&mdash;' === $columns->render_column( '', 'last_login', 7 ) );
 $check( 'foreign columns pass through', 'passthrough' === $columns->render_column( 'passthrough', 'username', 7 ) );
 
-$GLOBALS['test_state']['meta'][7]['_admin_last_login'] = gmmktime( 12, 30, 0, 6, 1, 2026 );
+$GLOBALS['test_state']['meta'][7]['_adc_last_login'] = gmmktime( 12, 30, 0, 6, 1, 2026 );
 $check( 'last login renders the stored timestamp', '2026-06-01 12:30' === $columns->render_column( '', 'last_login', 7 ) );
 
 $columns->record_last_login( 'admin', new WP_User() );
-$check( 'successful login is recorded', is_int( $GLOBALS['test_state']['meta'][7]['_admin_last_login'] ) );
+$check( 'successful login is recorded', is_int( $GLOBALS['test_state']['meta'][7]['_adc_last_login'] ) );
 
 $query = new WP_User_Query( array( 'orderby' => 'account_created' ) );
 $columns->sort_users( $query );
@@ -741,6 +826,30 @@ $meta_query = $query->get( 'meta_query' );
 $orderby    = $query->get( 'orderby' );
 $check( 'last login sorting keeps users without the meta key', is_array( $meta_query ) && 'OR' === $meta_query['relation'] );
 $check( 'last login sorting orders by the meta clause', is_array( $orderby ) && 'DESC' === $orderby['adc_last_login'] );
+
+$query = new WP_User_Query(
+	array(
+		'orderby'    => 'last_login',
+		'order'      => 'asc',
+		'meta_query' => array(
+			array(
+				'key'   => 'nickname',
+				'value' => 'shop',
+			),
+		),
+	)
+);
+$columns->sort_users( $query );
+$merged = $query->get( 'meta_query' );
+$check(
+	'last login sorting preserves an existing meta_query',
+	is_array( $merged )
+		&& 'AND' === $merged['relation']
+		&& isset( $merged[0][0]['key'] )
+		&& 'nickname' === $merged[0][0]['key']
+		&& isset( $merged[1]['relation'] )
+		&& 'OR' === $merged[1]['relation']
+);
 
 $GLOBALS['test_state']['is_admin'] = false;
 

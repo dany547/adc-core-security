@@ -131,10 +131,15 @@ class ADC_Security_Woocommerce {
 			add_action( 'woocommerce_store_api_checkout_order_processed', array( $this, 'record_order' ), 10, 1 );
 			add_action( 'template_redirect', array( $this, 'mark_session_started' ) );
 			add_action( 'woocommerce_order_status_failed', array( $this, 'handle_failed_order' ), 10, 2 );
-			add_action( 'woocommerce_admin_order_data_after_order_details', array( $this, 'render_order_security_info' ), 10, 1 );
+			// Official HPOS recipe: add_meta_box on shop_order or wc_get_page_screen_id( 'shop-order' ).
+			add_action( 'add_meta_boxes', array( $this, 'register_order_metabox' ) );
 
-			// Cart writes: stamped the session and throttled per IP (classic + Store API).
+			// Classic shortcode cart still uses this core filter. Store API / Checkout
+			// block docs mark it deprecated because it relies on wc_add_notice; those
+			// requests are handled below via rest_pre_dispatch (429) and
+			// woocommerce_store_api_validate_add_to_cart.
 			add_filter( 'woocommerce_add_to_cart_validation', array( $this, 'validate_classic_add_to_cart' ), 10, 2 );
+			add_action( 'woocommerce_store_api_validate_add_to_cart', array( $this, 'stamp_store_api_add_to_cart' ), 10, 2 );
 			add_filter( 'rest_pre_dispatch', array( $this, 'guard_store_api_cart' ), 20, 3 );
 
 			if ( $this->is_enabled( 'woo_checkout_honeypot' ) ) {
@@ -236,12 +241,15 @@ class ADC_Security_Woocommerce {
 	 * must not push the clock forward, otherwise the "submitted too fast" check
 	 * would punish normal shoppers.
 	 */
-	public function mark_session_started() {
+	public function mark_session_started( $force = false ) {
 		if ( $this->checkout_min_seconds() <= 0 ) {
 			return;
 		}
 
-		if ( function_exists( 'is_checkout' ) && ! is_checkout() && ( ! function_exists( 'is_cart' ) || ! is_cart() ) ) {
+		// Cart and checkout pages stamp on template_redirect. Add-to-cart and
+		// Store API writes pass $force so a product-page or REST add still counts
+		// as the first interaction (is_checkout()/is_cart() are false there).
+		if ( ! $force && function_exists( 'is_checkout' ) && ! is_checkout() && ( ! function_exists( 'is_cart' ) || ! is_cart() ) ) {
 			return;
 		}
 
@@ -262,7 +270,7 @@ class ADC_Security_Woocommerce {
 	 * @return bool
 	 */
 	public function validate_classic_add_to_cart( $passed, $product_id = 0 ) {
-		$this->mark_session_started();
+		$this->mark_session_started( true );
 
 		if ( ! $passed ) {
 			return $passed;
@@ -279,6 +287,20 @@ class ADC_Security_Woocommerce {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Stamp the session when the Store API adds an item to the cart.
+	 *
+	 * Rate limiting stays on rest_pre_dispatch (HTTP 429 for every cart write).
+	 * This hook is the documented Store API add-to-cart validation point; it
+	 * must not consume the throttle again or a single add would count twice.
+	 *
+	 * @param mixed $product Product being added (unused).
+	 * @param array $request Add-to-cart request params (unused).
+	 */
+	public function stamp_store_api_add_to_cart( $product = null, $request = array() ) {
+		$this->mark_session_started( true );
 	}
 
 	/**
@@ -304,7 +326,7 @@ class ADC_Security_Woocommerce {
 			return $result;
 		}
 
-		$this->mark_session_started();
+		$this->mark_session_started( true );
 
 		$decision = $this->enforce_cart_limit( 'store-api-cart', $route );
 
@@ -358,10 +380,43 @@ class ADC_Security_Woocommerce {
 	}
 
 	/**
-	 * Show the connection IP and any monitor-mode flags on the order edit screen.
+	 * Register the Security meta box on the legacy and HPOS order screens.
 	 *
-	 * The hook is the one fired by WC_Meta_Box_Order_Data, which is also the meta
-	 * box used by the High-Performance Order Storage order screen.
+	 * Follows the official WooCommerce HPOS recipe-book: pick the screen id
+	 * from CustomOrdersTableController, then add_meta_box().
+	 */
+	public function register_order_metabox() {
+		if ( ! function_exists( 'add_meta_box' ) ) {
+			return;
+		}
+
+		add_meta_box(
+			'adc-security-order',
+			__( 'Security', 'adc-security' ),
+			array( $this, 'render_order_security_metabox' ),
+			$this->order_admin_screen(),
+			'side',
+			'default'
+		);
+	}
+
+	/**
+	 * Meta box callback. Accepts WP_Post (legacy) or WC_Order (HPOS).
+	 *
+	 * @param mixed $post_or_order_object Post or order passed by WooCommerce.
+	 */
+	public function render_order_security_metabox( $post_or_order_object ) {
+		$order = $this->order_from_metabox_object( $post_or_order_object );
+
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
+
+		$this->render_order_security_info( $order );
+	}
+
+	/**
+	 * Show the connection IP and any monitor-mode flags on the order edit screen.
 	 *
 	 * @param mixed $order Order being edited.
 	 */
@@ -884,7 +939,7 @@ class ADC_Security_Woocommerce {
 		}
 
 		// 2. Per-IP registration throttle.
-		$limit = (int) $this->option( 'woo_registration_rate_limit', 5 );
+		$limit = (int) $this->option( 'woo_registration_rate_limit', 10 );
 		if ( null === $decision && $limit > 0 ) {
 			$attempt = $this->consume_attempt( 'adc_woo_reg_' . md5( $ip ), microtime( true ), self::REGISTRATION_WINDOW, $limit );
 
@@ -1213,7 +1268,7 @@ class ADC_Security_Woocommerce {
 	 * @return array|null Block decision, or null in monitor mode.
 	 */
 	private function flag_or_block( $event_type, $code, $message, $email, $ip, array $context ) {
-		$blocking            = ! $this->is_enabled( 'woo_monitor_mode' );
+		$blocking            = ! $this->is_monitor_mode();
 		$context['reason']   = $code;
 		$context['domain']   = ADC_Security_Woo_Rules::email_domain( $email );
 		$context['mode']     = $blocking ? 'block' : 'monitor';
@@ -1308,6 +1363,22 @@ class ADC_Security_Woocommerce {
 	 */
 	private function is_enabled( $key ) {
 		return ! empty( $this->options[ $key ] );
+	}
+
+	/**
+	 * Whether violations are logged without blocking.
+	 *
+	 * Missing key (upgrade before migrate_defaults has run) is treated as on,
+	 * so checkout is never blocked by an absent option.
+	 *
+	 * @return bool
+	 */
+	private function is_monitor_mode() {
+		if ( ! array_key_exists( 'woo_monitor_mode', $this->options ) ) {
+			return true;
+		}
+
+		return ! empty( $this->options['woo_monitor_mode'] );
 	}
 
 	/**
@@ -1413,6 +1484,50 @@ class ADC_Security_Woocommerce {
 		$wc = WC();
 
 		return ( $wc && isset( $wc->session ) && is_object( $wc->session ) ) ? $wc->session : null;
+	}
+
+	/**
+	 * Admin screen id for the order editor (legacy CPT vs HPOS).
+	 *
+	 * @return string
+	 */
+	private function order_admin_screen() {
+		$hpos_controller = '\Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController';
+
+		if ( class_exists( $hpos_controller ) && function_exists( 'wc_get_container' ) && function_exists( 'wc_get_page_screen_id' ) ) {
+			try {
+				$container  = wc_get_container();
+				$controller = ( is_object( $container ) && method_exists( $container, 'get' ) ) ? $container->get( $hpos_controller ) : null;
+
+				if ( is_object( $controller ) && method_exists( $controller, 'custom_orders_table_usage_is_enabled' ) && $controller->custom_orders_table_usage_is_enabled() ) {
+					return wc_get_page_screen_id( 'shop-order' );
+				}
+			} catch ( Exception $e ) {
+				// Fall back to the legacy screen id.
+			}
+		}
+
+		return 'shop_order';
+	}
+
+	/**
+	 * Normalise the object WooCommerce passes into a meta box callback.
+	 *
+	 * @param mixed $post_or_order_object WP_Post or WC_Order.
+	 * @return WC_Order|null
+	 */
+	private function order_from_metabox_object( $post_or_order_object ) {
+		if ( $post_or_order_object instanceof WC_Order ) {
+			return $post_or_order_object;
+		}
+
+		if ( $post_or_order_object instanceof WP_Post && function_exists( 'wc_get_order' ) ) {
+			$order = wc_get_order( $post_or_order_object->ID );
+
+			return $order instanceof WC_Order ? $order : null;
+		}
+
+		return null;
 	}
 
 	/**

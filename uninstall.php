@@ -56,7 +56,7 @@ foreach ( $two_fa_meta_keys as $meta_key ) {
 // Remove the last-login timestamps written by the Users screen columns.
 // Order IP meta (_adc_security_order_ip) is intentionally kept: it belongs to
 // the order record and is useful for post-incident fraud review.
-$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key = %s", '_admin_last_login' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName
+$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key = %s", '_adc_last_login' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName
 
 // Remove pending-login / lockout / one-time-display transients created during 2FA.
 $wpdb->query(

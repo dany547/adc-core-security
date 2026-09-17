@@ -171,7 +171,7 @@ class ADC_Security_Core {
 			'alert_admin_username'               => 1,
 			'rate_limiting_enabled'              => 1,
 			'woo_checkout_protection'            => 1,
-			'woo_monitor_mode'                   => 0,
+			'woo_monitor_mode'                   => 1,
 			'woo_checkout_honeypot'              => 1,
 			'woo_checkout_min_seconds'           => 3,
 			'woo_checkout_referrer_check'        => 'off',

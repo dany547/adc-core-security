@@ -646,7 +646,7 @@ class ADC_Security_Settings {
 				'adc_security_woo_checkout_section',
 				array(
 					'label_for'   => 'woo_monitor_mode',
-					'description' => 'Record every rule violation in the Activity log <strong>without blocking</strong> the checkout or the registration. Use this to tune the thresholds against real traffic before enforcing them.',
+					'description' => 'Record every rule violation in the Activity log <strong>without blocking</strong> the checkout or the registration. On by default so an update never starts rejecting orders before you have reviewed the log. Uncheck this to enforce the rules.',
 				)
 			);
 

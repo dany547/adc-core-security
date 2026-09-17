@@ -24,7 +24,7 @@ class ADC_Security_Users_Columns {
 	/**
 	 * User meta key holding the last successful login timestamp.
 	 */
-	const LAST_LOGIN_META = '_admin_last_login';
+	const LAST_LOGIN_META = '_adc_last_login';
 
 	/**
 	 * Query var used as the meta query clause name for last-login sorting.
@@ -144,21 +144,32 @@ class ADC_Security_Users_Columns {
 		$order = 'DESC' === strtoupper( (string) $query->get( 'order' ) ) ? 'DESC' : 'ASC';
 
 		// EXISTS | NOT EXISTS keeps users who never logged in in the result set.
-		$query->set(
-			'meta_query',
-			array(
-				'relation' => 'OR',
-				self::LAST_LOGIN_CLAUSE              => array(
-					'key'     => self::LAST_LOGIN_META,
-					'compare' => 'EXISTS',
-					'type'    => 'NUMERIC',
-				),
-				self::LAST_LOGIN_CLAUSE . '_missing' => array(
-					'key'     => self::LAST_LOGIN_META,
-					'compare' => 'NOT EXISTS',
-				),
-			)
+		$last_login_query = array(
+			'relation'                           => 'OR',
+			self::LAST_LOGIN_CLAUSE              => array(
+				'key'     => self::LAST_LOGIN_META,
+				'compare' => 'EXISTS',
+				'type'    => 'NUMERIC',
+			),
+			self::LAST_LOGIN_CLAUSE . '_missing' => array(
+				'key'     => self::LAST_LOGIN_META,
+				'compare' => 'NOT EXISTS',
+			),
 		);
+
+		$existing = $query->get( 'meta_query' );
+		if ( is_array( $existing ) && ! empty( $existing ) ) {
+			$query->set(
+				'meta_query',
+				array(
+					'relation' => 'AND',
+					$existing,
+					$last_login_query,
+				)
+			);
+		} else {
+			$query->set( 'meta_query', $last_login_query );
+		}
 
 		$query->set( 'orderby', array( self::LAST_LOGIN_CLAUSE => $order ) );
 	}
@@ -174,6 +185,12 @@ class ADC_Security_Users_Columns {
 			return '&mdash;';
 		}
 
-		return wp_date( 'Y-m-d H:i', (int) $timestamp );
+		$format = trim( get_option( 'date_format', 'Y-m-d' ) . ' ' . get_option( 'time_format', 'H:i' ) );
+
+		if ( '' === $format ) {
+			$format = 'Y-m-d H:i';
+		}
+
+		return wp_date( $format, (int) $timestamp );
 	}
 }
