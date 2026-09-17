@@ -134,6 +134,15 @@ class ADC_Security_Woocommerce {
 			// Official HPOS recipe: add_meta_box on shop_order or wc_get_page_screen_id( 'shop-order' ).
 			add_action( 'add_meta_boxes', array( $this, 'register_order_metabox' ) );
 
+			add_filter( 'manage_edit-shop_order_columns', array( $this, 'add_orders_column' ) );
+			add_action( 'manage_shop_order_posts_custom_column', array( $this, 'render_orders_column_legacy' ), 10, 2 );
+			add_filter( 'woocommerce_shop_order_list_table_columns', array( $this, 'add_orders_column' ) );
+			add_action( 'woocommerce_shop_order_list_table_custom_column', array( $this, 'render_orders_column_hpos' ), 10, 2 );
+			add_filter( 'views_edit-shop_order', array( $this, 'add_flagged_orders_view' ) );
+			add_filter( 'views_woocommerce_page_wc-orders', array( $this, 'add_flagged_orders_view' ) );
+			add_filter( 'woocommerce_order_query_args', array( $this, 'filter_flagged_orders_query_args' ) );
+			add_action( 'pre_get_posts', array( $this, 'filter_flagged_orders_legacy_query' ) );
+
 			// Classic shortcode cart still uses this core filter. Store API / Checkout
 			// block docs mark it deprecated because it relies on wc_add_notice; those
 			// requests are handled below via rest_pre_dispatch (429) and
@@ -447,6 +456,150 @@ class ADC_Security_Woocommerce {
 	}
 
 	/**
+	 * Add the Security column on the legacy and HPOS orders lists.
+	 *
+	 * @param array $columns Existing columns.
+	 * @return array
+	 */
+	public function add_orders_column( $columns ) {
+		if ( ! is_array( $columns ) ) {
+			return $columns;
+		}
+
+		$columns['adc_security'] = __( 'Security', 'adc-security' );
+
+		return $columns;
+	}
+
+	/**
+	 * Render the Security column on the legacy (CPT) orders list.
+	 *
+	 * @param string $column  Column id.
+	 * @param int    $post_id Order post ID.
+	 */
+	public function render_orders_column_legacy( $column, $post_id ) {
+		if ( 'adc_security' !== $column ) {
+			return;
+		}
+
+		$order = function_exists( 'wc_get_order' ) ? wc_get_order( $post_id ) : null;
+		$this->print_order_flag_column( $order );
+	}
+
+	/**
+	 * Render the Security column on the HPOS orders list.
+	 *
+	 * @param string $column Column id.
+	 * @param mixed  $order  WC_Order.
+	 */
+	public function render_orders_column_hpos( $column, $order ) {
+		if ( 'adc_security' !== $column ) {
+			return;
+		}
+
+		$this->print_order_flag_column( $order );
+	}
+
+	/**
+	 * Print Flagged + reason codes, or an em dash.
+	 *
+	 * @param mixed $order Order object.
+	 */
+	public function print_order_flag_column( $order ) {
+		if ( ! $order instanceof WC_Order ) {
+			echo '&mdash;';
+			return;
+		}
+
+		$reasons = (string) $order->get_meta( '_adc_security_review_reasons' );
+
+		if ( '' === $reasons ) {
+			echo '&mdash;';
+			return;
+		}
+
+		echo '<span class="adc-order-flagged">' . esc_html__( 'Flagged', 'adc-security' ) . '</span>';
+		echo ' <span class="description">' . esc_html( $reasons ) . '</span>';
+	}
+
+	/**
+	 * Add a "Flagged" view on the orders list.
+	 *
+	 * @param array $views Existing views.
+	 * @return array
+	 */
+	public function add_flagged_orders_view( $views ) {
+		if ( ! is_array( $views ) ) {
+			return $views;
+		}
+
+		$url   = add_query_arg( 'adc_security_review', '1' );
+		$class = ! empty( $_GET['adc_security_review'] ) ? 'current' : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		$views['adc_security_review'] = '<a href="' . esc_url( $url ) . '" class="' . esc_attr( $class ) . '">' . esc_html__( 'Flagged', 'adc-security' ) . '</a>';
+
+		return $views;
+	}
+
+	/**
+	 * Restrict HPOS / wc_get_orders queries to flagged orders when the view is active.
+	 *
+	 * @param array $args Query args.
+	 * @return array
+	 */
+	public function filter_flagged_orders_query_args( $args ) {
+		if ( ! is_admin() || empty( $_GET['adc_security_review'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return $args;
+		}
+
+		if ( ! is_array( $args ) ) {
+			return $args;
+		}
+
+		if ( ! isset( $args['meta_query'] ) || ! is_array( $args['meta_query'] ) ) {
+			$args['meta_query'] = array();
+		}
+
+		$args['meta_query'][] = array(
+			'key'   => '_adc_security_review',
+			'value' => '1',
+		);
+
+		return $args;
+	}
+
+	/**
+	 * Restrict the legacy shop_order list to flagged orders when the view is active.
+	 *
+	 * @param WP_Query $query Current query.
+	 */
+	public function filter_flagged_orders_legacy_query( $query ) {
+		if ( ! $query instanceof WP_Query || ! is_admin() || ! $query->is_main_query() ) {
+			return;
+		}
+
+		if ( 'shop_order' !== $query->get( 'post_type' ) ) {
+			return;
+		}
+
+		if ( empty( $_GET['adc_security_review'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+
+		$meta = $query->get( 'meta_query' );
+		if ( ! is_array( $meta ) ) {
+			$meta = array();
+		}
+
+		$meta[] = array(
+			'key'   => '_adc_security_review',
+			'value' => '1',
+		);
+
+		$query->set( 'meta_query', $meta );
+	}
+
+	/**
 	 * Record the buyer IP, identity counters and any monitor-mode flags on a new order.
 	 *
 	 * @param mixed $order WC_Order that was just created.
@@ -499,6 +652,7 @@ class ADC_Security_Woocommerce {
 
 		if ( $this->is_enabled( 'woo_registration_honeypot' ) ) {
 			add_action( 'woocommerce_register_form', array( $this, 'render_honeypot' ) );
+			add_action( 'woocommerce_lostpassword_form', array( $this, 'render_honeypot' ) );
 
 			if ( $this->is_enabled( 'woo_registration_protect_wp_form' ) ) {
 				add_action( 'register_form', array( $this, 'render_honeypot' ) );
@@ -508,6 +662,9 @@ class ADC_Security_Woocommerce {
 		if ( $this->is_enabled( 'woo_registration_protect_wp_form' ) ) {
 			add_filter( 'registration_errors', array( $this, 'validate_wp_registration' ), 10, 3 );
 		}
+
+		add_action( 'woocommerce_save_account_details_errors', array( $this, 'validate_account_details' ), 10, 2 );
+		add_action( 'lostpassword_post', array( $this, 'validate_woo_lost_password' ), 10, 2 );
 
 		if ( $this->is_enabled( 'woo_registration_disable_checkout_accounts' ) ) {
 			add_filter( 'woocommerce_checkout_registration_enabled', array( $this, 'disable_checkout_registration' ) );
@@ -553,6 +710,76 @@ class ADC_Security_Woocommerce {
 	 */
 	public function validate_wp_registration( $errors, $login = '', $email = '' ) {
 		return $this->add_registration_error( $errors, $email, 'wp-register' );
+	}
+
+	/**
+	 * Reject a disposable email when a logged-in customer changes it on My Account.
+	 *
+	 * Action: the WP_Error is mutated in place (WooCommerce Form Handler).
+	 *
+	 * @param WP_Error $errors Errors collector.
+	 * @param mixed    $user   Current user object (unused).
+	 */
+	public function validate_account_details( $errors, $user = null ) {
+		if ( ! $errors instanceof WP_Error ) {
+			return;
+		}
+
+		if ( ! $this->is_enabled( 'woo_block_disposable_emails' ) ) {
+			return;
+		}
+
+		$email = isset( $_POST['account_email'] ) ? sanitize_email( wp_unslash( $_POST['account_email'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+		if ( '' === $email || ! $this->is_blocked_email( $email ) ) {
+			return;
+		}
+
+		$reason = $this->flag_or_block(
+			'woo_registration',
+			'email_domain',
+			$this->registration_message(),
+			$email,
+			ADC_Security_Ip::get_client_ip(),
+			array( 'source' => 'account-details' )
+		);
+
+		if ( is_array( $reason ) ) {
+			$errors->add( 'adc_security_registration_blocked', $reason['message'] );
+		}
+	}
+
+	/**
+	 * Throttle and honeypot the WooCommerce My Account lost-password form.
+	 *
+	 * WordPress wp-login.php lost-password POSTs are already covered by the
+	 * login rate limiter. This callback only runs when the Woo form posted
+	 * `wc_reset_password` (see form-lost-password.php).
+	 *
+	 * @param WP_Error $errors    Errors collector from retrieve_password().
+	 * @param mixed    $user_data User row or false.
+	 */
+	public function validate_woo_lost_password( $errors, $user_data = null ) {
+		if ( ! $errors instanceof WP_Error ) {
+			return;
+		}
+
+		if ( empty( $_POST['wc_reset_password'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			return;
+		}
+
+		$email = '';
+		if ( is_object( $user_data ) && ! empty( $user_data->user_email ) ) {
+			$email = (string) $user_data->user_email;
+		} elseif ( isset( $_POST['user_login'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$email = sanitize_text_field( wp_unslash( $_POST['user_login'] ) );
+		}
+
+		$reason = $this->evaluate_lost_password( $email );
+
+		if ( is_array( $reason ) ) {
+			$errors->add( 'adc_security_lost_password_blocked', $reason['message'] );
+		}
 	}
 
 	/**
@@ -959,6 +1186,40 @@ class ADC_Security_Woocommerce {
 	}
 
 	/**
+	 * Evaluate lost-password rules for the WooCommerce My Account form.
+	 *
+	 * @param string $email Email or login submitted.
+	 * @return array|null Block decision, or null to allow.
+	 */
+	private function evaluate_lost_password( $email ) {
+		$ip      = ADC_Security_Ip::get_client_ip();
+		$context = array( 'source' => 'lost-password' );
+
+		if ( $this->is_exempt_request() ) {
+			return null;
+		}
+
+		$decision = null;
+
+		if ( $this->is_enabled( 'woo_registration_honeypot' ) && $this->honeypot_filled() ) {
+			$decision = $this->flag_or_block( 'woo_lost_password', 'honeypot', $this->lost_password_message(), $email, $ip, $context );
+		}
+
+		$limit = (int) $this->option( 'woo_registration_rate_limit', 10 );
+		if ( null === $decision && $limit > 0 ) {
+			$attempt = $this->consume_attempt( 'adc_woo_lost_' . md5( $ip ), microtime( true ), self::REGISTRATION_WINDOW, $limit );
+
+			if ( $attempt['exceeded'] ) {
+				$context['count'] = $attempt['count'];
+				$context['limit'] = $limit;
+				$decision         = $this->flag_or_block( 'woo_lost_password', 'rate_limit', $this->lost_password_message(), $email, $ip, $context );
+			}
+		}
+
+		return $decision;
+	}
+
+	/**
 	 * Check the order-velocity counters for the current checkout identity.
 	 *
 	 * @param array  $identity Identity keys: email, phone, address, postcode.
@@ -1338,6 +1599,15 @@ class ADC_Security_Woocommerce {
 	 */
 	private function registration_message() {
 		return __( 'We could not create this account. If you believe this is a mistake, please contact us.', 'adc-security' );
+	}
+
+	/**
+	 * Customer facing block message for lost-password rules.
+	 *
+	 * @return string
+	 */
+	private function lost_password_message() {
+		return __( 'We could not process this request. Please wait a moment and try again.', 'adc-security' );
 	}
 
 	// -------------------------------------------------------------------------

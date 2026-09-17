@@ -75,6 +75,9 @@ class ADC_Security_Dashboard {
 		$this->render_login_card();
 		$this->render_users_card( $has_default_admin, $admins_without_2fa );
 		$this->render_system_card( $htaccess_status, $keys_status );
+		if ( class_exists( 'WooCommerce' ) ) {
+			$this->render_woo_card();
+		}
 		echo '</div>';
 	}
 
@@ -190,6 +193,46 @@ class ADC_Security_Dashboard {
 			esc_attr__( 'Failed logins over the last 30 days', 'adc-security' ),
 			esc_attr( implode( ' ', $points ) )
 		);
+	}
+
+	/**
+	 * WooCommerce abuse-prevention activity (only rendered when WooCommerce is active).
+	 */
+	private function render_woo_card() {
+		$stats = class_exists( 'ADC_Security_Stats' ) ? ADC_Security_Stats::get_woo_stats() : array();
+		$options = get_option( ADC_Security_Settings::OPTION_NAME, array() );
+		$monitor = ! empty( $options['woo_monitor_mode'] );
+		?>
+		<div class="postbox adc-dashboard-card">
+			<h2 class="hndle"><span><?php esc_html_e( 'WooCommerce', 'adc-security' ); ?></span></h2>
+			<div class="inside">
+				<?php if ( $monitor ) : ?>
+					<p class="description"><?php esc_html_e( 'Monitor Mode is on: violations are logged, orders are not blocked.', 'adc-security' ); ?></p>
+				<?php endif; ?>
+				<?php if ( ! empty( $stats ) ) : ?>
+					<p>
+						<strong><?php echo (int) $stats['flagged_7d']; ?></strong>
+						<?php esc_html_e( 'flagged in 7 days', 'adc-security' ); ?>
+						/
+						<strong><?php echo (int) $stats['flagged_30d']; ?></strong>
+						<?php esc_html_e( 'in 30 days.', 'adc-security' ); ?>
+					</p>
+					<p>
+						<strong><?php echo (int) $stats['blocked_7d']; ?></strong>
+						<?php esc_html_e( 'blocked in 7 days', 'adc-security' ); ?>
+						/
+						<strong><?php echo (int) $stats['blocked_30d']; ?></strong>
+						<?php esc_html_e( 'in 30 days.', 'adc-security' ); ?>
+					</p>
+				<?php endif; ?>
+				<p class="description">
+					<a href="<?php echo esc_url( add_query_arg( array( 'page' => 'adc-security', 'tab' => 'woocommerce' ), admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'Manage WooCommerce settings', 'adc-security' ); ?></a>
+					|
+					<a href="<?php echo esc_url( add_query_arg( array( 'page' => 'adc-security', 'tab' => 'activity' ), admin_url( 'admin.php' ) ) ); ?>"><?php esc_html_e( 'Activity log', 'adc-security' ); ?></a>
+				</p>
+			</div>
+		</div>
+		<?php
 	}
 
 	/**

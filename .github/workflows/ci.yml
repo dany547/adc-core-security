@@ -143,6 +143,9 @@ jobs:
       - name: Test WooCommerce guard and users columns
         run: php tests/test-woo-guard.php
 
+      - name: Test lost-password captcha
+        run: php tests/test-lostpassword-captcha.php
+
       - name: Test HIBP matcher
         run: php tests/test-hibp.php
 

@@ -42,7 +42,10 @@ class ADC_Security_Captcha {
 
     private function init_honeypot() {
         add_action( 'login_form', array( $this, 'render_honeypot' ) );
+        add_action( 'lostpassword_form', array( $this, 'render_honeypot' ) );
+        add_action( 'woocommerce_lostpassword_form', array( $this, 'render_honeypot' ) );
         add_filter( 'authenticate', array( $this, 'validate_honeypot' ), 20, 3 );
+        add_action( 'lostpassword_post', array( $this, 'validate_honeypot_lostpassword' ), 10, 1 );
     }
 
     public function render_honeypot() {
@@ -66,7 +69,10 @@ class ADC_Security_Captcha {
 
     private function init_math_captcha() {
         add_action( 'login_form', array( $this, 'render_math_captcha' ) );
+        add_action( 'lostpassword_form', array( $this, 'render_math_captcha' ) );
+        add_action( 'woocommerce_lostpassword_form', array( $this, 'render_math_captcha' ) );
         add_filter( 'authenticate', array( $this, 'validate_math_captcha' ), 20, 3 );
+        add_action( 'lostpassword_post', array( $this, 'validate_math_lostpassword' ), 10, 1 );
     }
 
     public function render_math_captcha() {
@@ -113,8 +119,12 @@ class ADC_Security_Captcha {
 
     private function init_turnstile() {
         add_action( 'login_enqueue_scripts', array( $this, 'enqueue_turnstile_script' ) );
+        add_action( 'wp_enqueue_scripts', array( $this, 'maybe_enqueue_turnstile_lostpassword' ) );
         add_action( 'login_form', array( $this, 'render_turnstile' ) );
+        add_action( 'lostpassword_form', array( $this, 'render_turnstile' ) );
+        add_action( 'woocommerce_lostpassword_form', array( $this, 'render_turnstile' ) );
         add_filter( 'authenticate', array( $this, 'validate_turnstile' ), 20, 3 );
+        add_action( 'lostpassword_post', array( $this, 'validate_turnstile_lostpassword' ), 10, 1 );
     }
 
     public function enqueue_turnstile_script() {
@@ -144,6 +154,81 @@ class ADC_Security_Captcha {
         }
 
         return $user;
+    }
+
+    /**
+     * Load Turnstile on the WooCommerce My Account lost-password endpoint.
+     */
+    public function maybe_enqueue_turnstile_lostpassword() {
+        if ( ! function_exists( 'is_account_page' ) || ! is_account_page() ) {
+            return;
+        }
+
+        if ( function_exists( 'is_wc_endpoint_url' ) && ! is_wc_endpoint_url( 'lost-password' ) ) {
+            return;
+        }
+
+        $this->enqueue_turnstile_script();
+    }
+
+    /**
+     * Honeypot check on lost-password POST (wp-login and Woo My Account).
+     *
+     * @param WP_Error $errors Errors collector from retrieve_password().
+     */
+    public function validate_honeypot_lostpassword( $errors ) {
+        if ( ! $errors instanceof WP_Error ) {
+            return;
+        }
+
+        if ( ! empty( $_POST['adc_hp_check'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+            $errors->add( 'honeypot_fail', '<strong>Error</strong>: Bot detected.' );
+        }
+    }
+
+    /**
+     * Math captcha check on lost-password POST.
+     *
+     * @param WP_Error $errors Errors collector from retrieve_password().
+     */
+    public function validate_math_lostpassword( $errors ) {
+        if ( ! $errors instanceof WP_Error ) {
+            return;
+        }
+
+        if ( isset( $_POST['adc_math_captcha'] ) && isset( $_POST['adc_math_token'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing
+            $token         = sanitize_text_field( wp_unslash( $_POST['adc_math_token'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+            $answer        = (int) $_POST['adc_math_captcha']; // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            $transient_key = 'adc_math_captcha_' . $token;
+            $expected      = get_transient( $transient_key );
+            delete_transient( $transient_key );
+
+            if ( false === $expected || $answer !== (int) $expected ) {
+                $errors->add( 'captcha_error', '<strong>Error</strong>: Incorrect CAPTCHA answer.' );
+            }
+
+            return;
+        }
+
+        $errors->add( 'captcha_error', '<strong>Error</strong>: Please solve the CAPTCHA.' );
+    }
+
+    /**
+     * Turnstile check on lost-password POST.
+     *
+     * @param WP_Error $errors Errors collector from retrieve_password().
+     */
+    public function validate_turnstile_lostpassword( $errors ) {
+        if ( ! $errors instanceof WP_Error ) {
+            return;
+        }
+
+        $token  = isset( $_POST['cf-turnstile-response'] ) ? wp_unslash( $_POST['cf-turnstile-response'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        $result = $this->verify_turnstile_response( $token );
+
+        if ( is_wp_error( $result ) ) {
+            $errors->add( $result->get_error_code(), $result->get_error_message() );
+        }
     }
 
     /**

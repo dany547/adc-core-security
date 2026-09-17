@@ -100,6 +100,21 @@ function esc_attr( $value ) {
 function esc_html( $value ) {
 	return htmlspecialchars( (string) $value, ENT_QUOTES );
 }
+function esc_url( $url ) {
+	return htmlspecialchars( (string) $url, ENT_QUOTES );
+}
+function add_query_arg( $key, $value = null ) {
+	if ( is_array( $key ) ) {
+		return 'https://example.test/wp-admin/?' . http_build_query( $key );
+	}
+	return 'https://example.test/wp-admin/?' . rawurlencode( (string) $key ) . '=' . rawurlencode( (string) $value );
+}
+function sanitize_email( $email ) {
+	return strtolower( trim( (string) $email ) );
+}
+function sanitize_text_field( $value ) {
+	return trim( (string) $value );
+}
 function __( $text, $domain = null ) {
 	return $text;
 }
@@ -194,6 +209,21 @@ class WP_User_Query {
 	}
 	public function set( $key, $value ) {
 		$this->vars[ $key ] = $value;
+	}
+}
+class WP_Query {
+	private $vars = array();
+	public function __construct( $vars = array() ) {
+		$this->vars = $vars;
+	}
+	public function get( $key ) {
+		return isset( $this->vars[ $key ] ) ? $this->vars[ $key ] : '';
+	}
+	public function set( $key, $value ) {
+		$this->vars[ $key ] = $value;
+	}
+	public function is_main_query() {
+		return true;
 	}
 }
 class WP_REST_Request {
@@ -437,6 +467,10 @@ $check( 'my account registration honeypot rendered', isset( $hooks['woocommerce_
 $check( 'WordPress registration honeypot rendered', isset( $hooks['register_form'] ) );
 $check( 'WordPress registration errors filtered', isset( $hooks['registration_errors'] ) );
 $check( 'WooCommerce registration errors filtered', isset( $hooks['woocommerce_process_registration_errors'] ) );
+$check( 'account details email is validated', isset( $hooks['woocommerce_save_account_details_errors'] ) );
+$check( 'lost password POST is validated', isset( $hooks['lostpassword_post'] ) );
+$check( 'HPOS orders list column registered', isset( $hooks['woocommerce_shop_order_list_table_columns'] ) );
+$check( 'legacy orders list column registered', isset( $hooks['manage_edit-shop_order_columns'] ) );
 
 // ---------------------------------------------------------------------------
 // Classic checkout rules
@@ -781,6 +815,79 @@ $check( 'checkout account creation disabled', false === $woo->disable_checkout_r
 $GLOBALS['test_state']['is_admin'] = true;
 $check( 'checkout account creation left alone in wp-admin', true === $woo->disable_checkout_registration( true ) );
 $GLOBALS['test_state']['is_admin'] = false;
+
+$reset();
+$_POST['account_email'] = 'bot@mailinator.com';
+$errors                 = new WP_Error();
+$woo->validate_account_details( $errors );
+$check( 'account details blocks disposable email', in_array( 'adc_security_registration_blocked', $errors->get_error_codes(), true ) );
+
+$reset( array( 'woo_monitor_mode' => 1 ) );
+$_POST['account_email'] = 'bot@mailinator.com';
+$errors                 = new WP_Error();
+$woo->validate_account_details( $errors );
+$check( 'account details monitor mode does not block', array() === $errors->errors );
+
+$reset();
+$_POST['account_email'] = 'ok@example.com';
+$errors                 = new WP_Error();
+$woo->validate_account_details( $errors );
+$check( 'account details allows a normal email', array() === $errors->errors );
+
+$reset( array( 'woo_registration_rate_limit' => 1 ) );
+$_POST['wc_reset_password'] = 'true';
+$woo->validate_woo_lost_password( new WP_Error() );
+$errors = new WP_Error();
+$woo->validate_woo_lost_password( $errors );
+$check( 'woo lost password throttle blocks', in_array( 'adc_security_lost_password_blocked', $errors->get_error_codes(), true ) );
+
+$reset();
+$_POST['adc_woo_hp'] = 'bot';
+$errors              = new WP_Error();
+$woo->validate_woo_lost_password( $errors );
+$check( 'wp-login lost password is not throttled here', array() === $errors->errors );
+
+$reset();
+$_POST['wc_reset_password'] = 'true';
+$_POST['adc_woo_hp']        = 'bot';
+$errors                     = new WP_Error();
+$woo->validate_woo_lost_password( $errors );
+$check( 'woo lost password honeypot blocks', in_array( 'adc_security_lost_password_blocked', $errors->get_error_codes(), true ) );
+
+$reset();
+$cols = $woo->add_orders_column( array( 'order_number' => 'Order' ) );
+$check( 'orders list security column added', isset( $cols['adc_security'] ) );
+
+$listed        = new WC_Order();
+$listed->meta['_adc_security_review_reasons'] = 'honeypot';
+ob_start();
+$woo->render_orders_column_hpos( 'adc_security', $listed );
+$flag_html = (string) ob_get_clean();
+$check( 'flagged order column shows Flagged', false !== strpos( $flag_html, 'Flagged' ) && false !== strpos( $flag_html, 'honeypot' ) );
+
+ob_start();
+$woo->render_orders_column_hpos( 'adc_security', new WC_Order() );
+$clean_col = (string) ob_get_clean();
+$check( 'clean order column is a dash', '&mdash;' === $clean_col );
+
+$GLOBALS['test_state']['is_admin'] = true;
+$args = $woo->filter_flagged_orders_query_args( array() );
+$check( 'flagged view off does not alter wc_get_orders', array() === $args );
+$_GET['adc_security_review'] = '1';
+$args = $woo->filter_flagged_orders_query_args( array() );
+$check(
+	'flagged view adds review meta_query',
+	isset( $args['meta_query'][0]['key'] ) && '_adc_security_review' === $args['meta_query'][0]['key']
+);
+$query = new WP_Query( array( 'post_type' => 'shop_order' ) );
+$woo->filter_flagged_orders_legacy_query( $query );
+$legacy_meta = $query->get( 'meta_query' );
+$check( 'legacy shop_order query is restricted when flagged view is on', isset( $legacy_meta[0]['key'] ) && '_adc_security_review' === $legacy_meta[0]['key'] );
+unset( $_GET['adc_security_review'] );
+$GLOBALS['test_state']['is_admin'] = false;
+
+$views = $woo->add_flagged_orders_view( array( 'all' => '<a>All</a>' ) );
+$check( 'flagged view link is added', isset( $views['adc_security_review'] ) && false !== strpos( $views['adc_security_review'], 'Flagged' ) );
 
 // ---------------------------------------------------------------------------
 // Users screen columns

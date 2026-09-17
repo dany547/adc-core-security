@@ -10,6 +10,10 @@
 - **Disposable email domain filter**: the built-in provider list and the custom list can be extended from code with `adc_security_blocked_email_domains`.
 - **Users screen columns**: the WordPress Users list now shows "Account Created" and "Last Login" (recorded on each successful login in `_adc_last_login`) and both columns are sortable, using the site's date and time formats. Sorting by last login keeps users who never logged in in the list instead of silently hiding them.
 - The security score now includes a WooCommerce checkout protection check on stores where WooCommerce is active.
+- Disposable email filter on the My Account **Account details** form, so a customer cannot switch to a throwaway address after registering.
+- Lost-password protection: the login captcha/honeypot also run on `wp-login.php?action=lostpassword` and on the WooCommerce My Account reset form; Woo My Account resets are throttled per IP (wp-login.php POSTs already go through the login rate limiter).
+- **Flagged** column and view on the orders list (legacy CPT and HPOS), so monitor-mode orders are visible without opening each order.
+- Dashboard **WooCommerce** card: flagged vs blocked counts over 7 and 30 days when WooCommerce is active.
 
 ## [1.9.2] - 2026-08-19
 ### Added

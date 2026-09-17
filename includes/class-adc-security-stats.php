@@ -14,8 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class ADC_Security_Stats {
 
-	const CACHE_KEY = 'adc_security_login_stats';
-	const CACHE_TTL = 5 * MINUTE_IN_SECONDS;
+	const CACHE_KEY     = 'adc_security_login_stats';
+	const WOO_CACHE_KEY = 'adc_security_woo_stats';
+	const CACHE_TTL     = 5 * MINUTE_IN_SECONDS;
 
 	/**
 	 * Login/lockout statistics for the dashboard's Login & Lockout card.
@@ -46,6 +47,37 @@ class ADC_Security_Stats {
 		);
 
 		set_transient( self::CACHE_KEY, $stats, self::CACHE_TTL );
+
+		return $stats;
+	}
+
+	/**
+	 * WooCommerce abuse-prevention counts for the dashboard card.
+	 *
+	 * @param bool $force_refresh Bypass the cached copy.
+	 * @return array{blocked_7d:int,flagged_7d:int,blocked_30d:int,flagged_30d:int}
+	 */
+	public static function get_woo_stats( $force_refresh = false ) {
+		if ( ! $force_refresh ) {
+			$cached = get_transient( self::WOO_CACHE_KEY );
+			if ( false !== $cached ) {
+				return $cached;
+			}
+		}
+
+		$table = ADC_Security_Install::events_table();
+
+		$blocked = array( 'woo_checkout_blocked', 'woo_registration_blocked', 'woo_lost_password_blocked' );
+		$flagged = array( 'woo_checkout_flagged', 'woo_registration_flagged', 'woo_lost_password_flagged' );
+
+		$stats = array(
+			'blocked_7d'  => self::count_types_since( $table, $blocked, 7 ),
+			'flagged_7d'  => self::count_types_since( $table, $flagged, 7 ),
+			'blocked_30d' => self::count_types_since( $table, $blocked, 30 ),
+			'flagged_30d' => self::count_types_since( $table, $flagged, 30 ),
+		);
+
+		set_transient( self::WOO_CACHE_KEY, $stats, self::CACHE_TTL );
 
 		return $stats;
 	}
@@ -129,5 +161,33 @@ class ADC_Security_Stats {
 	 */
 	public static function flush_cache() {
 		delete_transient( self::CACHE_KEY );
+		delete_transient( self::WOO_CACHE_KEY );
+	}
+
+	/**
+	 * Count rows whose event_type is in $types, in the last $days days.
+	 *
+	 * @param string $table Events table name.
+	 * @param array  $types Event type slugs.
+	 * @param int    $days  Window length.
+	 * @return int
+	 */
+	private static function count_types_since( $table, array $types, $days ) {
+		if ( empty( $types ) ) {
+			return 0;
+		}
+
+		global $wpdb;
+
+		$since        = gmdate( 'Y-m-d H:i:s', time() - ( $days * DAY_IN_SECONDS ) );
+		$placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
+		$params       = array_merge( array_values( $types ), array( $since ) );
+
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$table} WHERE event_type IN ($placeholders) AND event_time >= %s", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+				...$params
+			)
+		);
 	}
 }
