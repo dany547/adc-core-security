@@ -96,6 +96,20 @@ class ADC_Security_Core {
 	public $vulnerabilities;
 
 	/**
+	 * WooCommerce abuse-prevention instance.
+	 *
+	 * @var ADC_Security_Woocommerce
+	 */
+	public $woocommerce;
+
+	/**
+	 * Users screen columns instance.
+	 *
+	 * @var ADC_Security_Users_Columns
+	 */
+	public $users_columns;
+
+	/**
 	 * Main ADC Security Instance.
 	 *
 	 * Ensures only one instance of ADC Security is loaded or can be loaded.
@@ -156,6 +170,28 @@ class ADC_Security_Core {
 			'disable_script_concat'              => 0,
 			'alert_admin_username'               => 1,
 			'rate_limiting_enabled'              => 1,
+			'woo_checkout_protection'            => 1,
+			'woo_monitor_mode'                   => 0,
+			'woo_checkout_honeypot'              => 1,
+			'woo_checkout_min_seconds'           => 3,
+			'woo_checkout_referrer_check'        => 'off',
+			'woo_checkout_rate_limit'            => 30,
+			'woo_cart_write_limit'               => 60,
+			'woo_checkout_turnstile'             => 0,
+			'woo_order_window_minutes'           => 60,
+			'woo_order_ip_limit'                 => 10,
+			'woo_order_email_limit'              => 20,
+			'woo_order_phone_limit'              => 5,
+			'woo_order_address_limit'            => 5,
+			'woo_failed_order_limit'             => 5,
+			'woo_registration_protection'        => 1,
+			'woo_registration_honeypot'          => 1,
+			'woo_registration_rate_limit'        => 10,
+			'woo_registration_disable_checkout_accounts' => 0,
+			'woo_registration_disable_myaccount_form'    => 0,
+			'woo_registration_protect_wp_form'   => 1,
+			'woo_block_disposable_emails'        => 1,
+			'woo_blocked_email_domains'          => '',
         );
 
         $changed = false;
@@ -207,6 +243,9 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-rate-limit.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-integrity.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-vulnerabilities.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-woo-rules.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-woocommerce.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-users-columns.php';
 
 		if ( is_admin() ) {
 			require_once ADC_SECURITY_DIR . 'includes/class-adc-security-dashboard.php';
@@ -229,6 +268,8 @@ class ADC_Security_Core {
 		$this->hardening = new ADC_Security_Hardening( $this->csp );
 		$this->captcha   = new ADC_Security_Captcha();
 		$this->events    = new ADC_Security_Events();
+		$this->woocommerce   = new ADC_Security_Woocommerce( $this->login, $this->captcha );
+		$this->users_columns = new ADC_Security_Users_Columns();
 		ADC_Security_2fa::instance();
 
         // Init Updater

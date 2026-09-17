@@ -137,7 +137,26 @@ class ADC_Security_Captcha {
              return $user;
         }
 
-        $response = $_POST['cf-turnstile-response'];
+        $result = $this->verify_turnstile_response( $_POST['cf-turnstile-response'] );
+
+        if ( is_wp_error( $result ) ) {
+            return $result;
+        }
+
+        return $user;
+    }
+
+    /**
+     * Verify a Turnstile token against the Cloudflare siteverify endpoint.
+     *
+     * Shared by the login form and the optional classic-checkout challenge so
+     * both surfaces use identical fail-closed behavior.
+     *
+     * @param string $response Token from the cf-turnstile-response field.
+     * @return true|WP_Error True when verified, WP_Error otherwise.
+     */
+    public function verify_turnstile_response( $response ) {
+        $response = (string) $response;
         $secret   = isset( $this->options['turnstile_secret_key'] ) ? $this->options['turnstile_secret_key'] : '';
 
         // Fail closed: an incomplete Turnstile configuration must never let
@@ -147,6 +166,10 @@ class ADC_Security_Captcha {
             return new WP_Error( 'turnstile_misconfigured', '<strong>Error</strong>: CAPTCHA is misconfigured. Please contact the site administrator.' );
         }
 
+        if ( '' === trim( $response ) ) {
+            return new WP_Error( 'turnstile_fail', '<strong>Error</strong>: CAPTCHA verification failed.' );
+        }
+
         $verify_url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
         $data = array(
             'secret'   => $secret,
@@ -154,21 +177,21 @@ class ADC_Security_Captcha {
             'remoteip' => ADC_Security_Ip::get_client_ip(),
         );
 
-        $response = wp_remote_post( $verify_url, array(
+        $verify = wp_remote_post( $verify_url, array(
             'body' => $data,
         ) );
 
-        if ( is_wp_error( $response ) ) {
+        if ( is_wp_error( $verify ) ) {
             return new WP_Error( 'turnstile_api_error', '<strong>Error</strong>: Unable to verify CAPTCHA.' );
         }
 
-        $body = wp_remote_retrieve_body( $response );
+        $body = wp_remote_retrieve_body( $verify );
         $result = json_decode( $body );
 
         if ( empty( $result->success ) ) {
             return new WP_Error( 'turnstile_fail', '<strong>Error</strong>: CAPTCHA verification failed.' );
         }
 
-        return $user;
+        return true;
     }
 }

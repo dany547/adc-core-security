@@ -30,6 +30,7 @@ class ADC_Security_Score {
 	 *                                - 'admins_without_2fa'   int, number of administrators without 2FA enabled
 	 *                                - 'integrity_issues'     int, count of file integrity findings (null/absent = not yet scanned, doesn't count against the score)
 	 *                                - 'vulnerability_issues' int, count of flagged plugins (null/absent = not yet scanned)
+	 *                                - 'woocommerce_active'   bool, adds the store-specific checks when true
 	 *
 	 * @return array{score:int,grade:string,checks:array}
 	 */
@@ -170,6 +171,16 @@ class ADC_Security_Score {
 				'passed' => 0 === (int) $vulnerability_issues,
 				'weight' => 6,
 				'tab'    => 'support',
+			);
+		}
+
+		if ( ! empty( $extra['woocommerce_active'] ) ) {
+			$checks[] = array(
+				'id'     => 'woo_checkout_protection',
+				'label'  => 'WooCommerce checkout abuse protection enabled',
+				'passed' => ! empty( $options['woo_checkout_protection'] ),
+				'weight' => 6,
+				'tab'    => 'woocommerce',
 			);
 		}
 

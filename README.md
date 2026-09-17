@@ -20,6 +20,8 @@ ADC Core Security is a lightweight WordPress plugin for protecting login access,
 - **Administrator session expiration**: Set a 1-30 day cookie lifetime for administrator sessions.
 - **Security headers**: Configure HSTS, Content-Security-Policy, X-Frame-Options, and related headers.
 - **Bot protection**: Use a simple math captcha, Cloudflare Turnstile, and a honeypot field.
+- **WooCommerce order & account abuse protection**: On stores running WooCommerce, server-side rules throttle checkout submissions and cart writes per IP, limit order velocity per IP, billing email, phone number and billing address, reject disposable email domains, and block bursts of failed orders (card testing). Account creation is filtered the same way across the My Account form, the checkout "create an account" option, and the WordPress registration form, with two opt-in switches to remove account creation from checkout or from the My Account page entirely. A monitor mode flags orders instead of blocking them, and the order screen shows the connection IP and the flag reasons. Covers both the classic (shortcode) checkout and the Checkout block (Store API).
+- **Users screen columns**: "Account Created" and "Last Login" columns on the WordPress Users list, both sortable, with users who never logged in kept in the list when sorting by last login.
 - **Hardening controls**: Disable XML-RPC, restrict REST API access, and hide WordPress version details.
 - **System tools**: Review plugin status and diagnostic information from the WordPress admin area.
 
@@ -27,6 +29,7 @@ ADC Core Security is a lightweight WordPress plugin for protecting login access,
 
 - WordPress 5.8 or later
 - PHP 7.4 or later
+- WooCommerce is optional. The WooCommerce tab only appears when WooCommerce is active (tested against the latest releases; both the classic checkout and the Checkout block are supported).
 
 ## Installation
 
@@ -45,6 +48,13 @@ ADC Core Security is a lightweight WordPress plugin for protecting login access,
 - Only set the Trusted Proxy Header if the site actually sits behind that proxy/CDN, and list its real IP ranges under Trusted Proxy IPs. Setting a header without a matching trusted IP is ignored (fails safe), but a wrong or missing trusted-IP list on a site that genuinely is behind a proxy means every visitor appears to share the proxy's IP.
 - Before requiring 2FA for a role, enroll your own account first and save the recovery codes somewhere safe — they are shown only once, right after enabling 2FA. A grace period (configurable, default 0 = immediate) gives already-logged-in users time to enroll before they're redirected to the 2FA tab on every wp-admin request.
 - The plugin has no activation hook; new database tables/options are created on the first admin request after an update, via the existing version-check routine.
+- WooCommerce checkout protection is enabled by default on stores where WooCommerce is active, using conservative thresholds (30 checkout attempts and 60 cart writes per IP per 10 minutes, 10 orders per IP, 20 per billing email, 5 per phone, 5 per billing address and 5 failed orders per hour, registration attempts limited to 10 per IP per hour, minimum interaction time 3 seconds). Use **Monitor Mode** first to see what the rules would have blocked, then tune the limits. Allowlisted IPs in the Login Security tab bypass every WooCommerce rule, so test orders from a trusted address are never affected.
+- The phone and address limits are the first ones to raise on wholesale/B2B stores, on offices and for families sharing one address. Phone matching compares digits only (formatting and punctuation are ignored), so a number written with a different country prefix counts as a different number.
+- **Origin / Referer check is off by default** because headless front-ends, cross-domain storefronts and some privacy setups legitimately send a foreign or missing Origin/Referer. Enable "Block foreign Origin/Referer" if the site itself serves the checkout (the common case); test with Monitor Mode first. Extend the accepted hosts from code with the `adc_security_checkout_allowed_hosts` filter if the store legitimately spans several domains.
+- Orders that pass while Monitor Mode is active get `_adc_security_review` and `_adc_security_review_reasons` order meta, shown in the Security panel of the order edit screen. Use those to exclude the orders from conversion reporting while evaluating the rules.
+- **Conversion hygiene matters as much as blocking**: fire the purchase conversion only for paid orders (`processing`/`completed`) instead of on the order-received page for every status, and exclude orders flagged for review. For cash-on-delivery orders — which never change payment status — correct the reporting afterwards (Google Ads offline conversion adjustment, GA4 `refund` event, Meta Conversions API refund).
+- "Turnstile On Checkout" reuses the Cloudflare Turnstile keys from the Captcha tab and applies to the classic (shortcode) checkout only, since the Checkout block renders its form in the browser; the honeypot is limited to the classic checkout for the same reason. The minimum interaction time and the cart/checkout throttles work on both checkouts because they read the WooCommerce session.
+- Do not combine "Disable Account Creation At Checkout" with a store that requires accounts (guest checkout disabled): the Checkout block refuses to place an order in that configuration, and the classic checkout keeps creating the required account anyway. The setting is meant for stores that accept guest orders.
 
 ## Automatic Updates
 
@@ -54,9 +64,9 @@ If an automatic update is unavailable, download the latest ZIP from the Releases
 
 ## Data and Uninstall
 
-The plugin stores its settings, lockout data, audit-log events (in a dedicated database table), and plugin-specific log data in WordPress. Two-factor secrets are stored encrypted in user meta (derived from the site's WordPress salts) and recovery codes are stored hashed, never in plaintext. Diagnostic exports and the Activity log may include IP addresses and activity details, so handle them as sensitive information.
+The plugin stores its settings, lockout data, audit-log events (in a dedicated database table), and plugin-specific log data in WordPress. Two-factor secrets are stored encrypted in user meta (derived from the site's WordPress salts) and recovery codes are stored hashed, never in plaintext. Diagnostic exports and the Activity log may include IP addresses and activity details, so handle them as sensitive information. When WooCommerce protection is active, each new order keeps the connecting IP in an order meta field (`_adc_security_order_ip`, shown in the order's custom-fields panel) for fraud review, and each successful login timestamp is stored in the `_admin_last_login` user meta to power the Users screen columns.
 
-Deleting the plugin removes its options, transients, the audit-log database table, and all per-user 2FA data. Back up any information you need before deletion.
+Deleting the plugin removes its options, transients, the audit-log database table, and all per-user 2FA data (plus the last-login user meta). Hidden order IP meta is left in place so the store keeps its fraud-review records. Back up any information you need before deletion.
 
 ## License
 

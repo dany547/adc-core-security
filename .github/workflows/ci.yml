@@ -100,6 +100,9 @@ jobs:
             "includes/class-adc-security-integrity.php"
             "includes/class-adc-security-vulnerabilities.php"
             "includes/class-adc-security-cron-health.php"
+            "includes/class-adc-security-woo-rules.php"
+            "includes/class-adc-security-woocommerce.php"
+            "includes/class-adc-security-users-columns.php"
           )
           missing=0
           for file in "${required_files[@]}"; do
@@ -133,6 +136,12 @@ jobs:
 
       - name: Test rate limiter
         run: php tests/test-rate-limit.php
+
+      - name: Test WooCommerce abuse rules
+        run: php tests/test-woo-rules.php
+
+      - name: Test WooCommerce guard and users columns
+        run: php tests/test-woo-guard.php
 
       - name: Test HIBP matcher
         run: php tests/test-hibp.php

@@ -614,6 +614,327 @@ class ADC_Security_Settings {
                 'description' => 'Reject new and reset passwords found in the Have I Been Pwned breach database. Privacy: only the first 5 characters of the password\'s SHA-1 hash are ever sent to the API (k-anonymity) — the actual password never leaves the server. Opt-in because it makes an external HTTPS request on every password change.',
             )
         );
+
+		// --- WooCommerce abuse prevention (only relevant when WooCommerce is active) ---
+		if ( class_exists( 'WooCommerce' ) ) {
+			$woo_options = get_option( self::OPTION_NAME, array() );
+
+			add_settings_section(
+				'adc_security_woo_checkout_section',
+				'Checkout Protection',
+				null,
+				'adc_security_woocommerce'
+			);
+
+			add_settings_field(
+				'woo_checkout_protection',
+				'Checkout Abuse Protection',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_checkout_protection',
+					'description' => 'Master switch for the checkout rules below. Protects both the classic (shortcode) checkout and the Checkout block (Store API). Every rule is evaluated server-side; nothing is trusted from the browser.',
+				)
+			);
+
+			add_settings_field(
+				'woo_monitor_mode',
+				'Monitor Mode (Log Only)',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_monitor_mode',
+					'description' => 'Record every rule violation in the Activity log <strong>without blocking</strong> the checkout or the registration. Use this to tune the thresholds against real traffic before enforcing them.',
+				)
+			);
+
+			add_settings_field(
+				'woo_checkout_honeypot',
+				'Checkout Honeypot',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_checkout_honeypot',
+					'description' => 'Add an invisible field to the classic checkout form. Bots that blindly fill every field are rejected. The Checkout block renders on the client, so it has no field to protect.',
+				)
+			);
+
+			add_settings_field(
+				'woo_checkout_min_seconds',
+				'Minimum Checkout Time (Seconds)',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_checkout_min_seconds',
+					'description' => 'Reject orders submitted faster than this many seconds after the session first touched the cart or the checkout page (measured once per session, so reloads and extra tabs never reset it). 0 disables the check. Catches scripts that add to cart and check out within the same second.',
+					'min'         => 0,
+					'max'         => 120,
+				)
+			);
+
+			add_settings_field(
+				'woo_checkout_referrer_check',
+				'Origin / Referer Check',
+				array( $this, 'render_select_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_checkout_referrer_check',
+					'description' => 'Verifies that checkout requests come from this site. "Block foreign" rejects requests that send an Origin/Referer for another domain; "Require same-site" also rejects requests with no Origin/Referer at all (stricter, but browsers that strip the header will be blocked). Leave off for headless or multi-domain front-ends. Test with Monitor Mode first.',
+					'options'     => array(
+						'off'      => 'Off',
+						'mismatch' => 'Block foreign Origin/Referer',
+						'required' => 'Require same-site Origin/Referer',
+					),
+				)
+			);
+
+			add_settings_field(
+				'woo_checkout_rate_limit',
+				'Checkout Attempts Per IP',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_checkout_rate_limit',
+					'description' => 'Maximum checkout submissions per IP address within 10 minutes. 0 disables the throttle. Allowlisted IPs and values without a detectable IP are always exempt.',
+					'min'         => 0,
+					'max'         => 500,
+				)
+			);
+
+			add_settings_field(
+				'woo_cart_write_limit',
+				'Cart Updates Per IP',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_cart_write_limit',
+					'description' => 'Maximum cart write requests (add to cart, cart updates, coupons) per IP address within 10 minutes, covering both the classic cart and the Store API. 0 disables the throttle. A volume guard that raises the cost before an abuser ever reaches checkout.',
+					'min'         => 0,
+					'max'         => 1000,
+				)
+			);
+
+			add_settings_field(
+				'woo_order_window_minutes',
+				'Order Limit Window (Minutes)',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_order_window_minutes',
+					'description' => 'Time window used by the two order limits below.',
+					'min'         => 1,
+					'max'         => 1440,
+				)
+			);
+
+			add_settings_field(
+				'woo_order_ip_limit',
+				'Max Orders Per IP',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_order_ip_limit',
+					'description' => 'Maximum orders a single IP address may create within the window above. 0 disables the limit. Useful against card-testing and fake-order floods from one source.',
+					'min'         => 0,
+					'max'         => 200,
+				)
+			);
+
+			add_settings_field(
+				'woo_order_email_limit',
+				'Max Orders Per Email',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_order_email_limit',
+					'description' => 'Maximum orders a single billing email address may create within the window above. 0 disables the limit. Catches bots that rotate their IP address.',
+					'min'         => 0,
+					'max'         => 500,
+				)
+			);
+
+			add_settings_field(
+				'woo_order_phone_limit',
+				'Max Orders Per Phone',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_order_phone_limit',
+					'description' => 'Maximum orders a single billing phone number may create within the window above. 0 disables the limit. Catches bots that rotate IPs and emails but keep reusing one phone number. Wholesale/B2B stores should raise this.',
+					'min'         => 0,
+					'max'         => 200,
+				)
+			);
+
+			add_settings_field(
+				'woo_order_address_limit',
+				'Max Orders Per Address',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_order_address_limit',
+					'description' => 'Maximum orders a single billing address (street + postcode) may create within the window above. 0 disables the limit. Raise it for offices, families or wholesale customers who legitimately ship to the same address.',
+					'min'         => 0,
+					'max'         => 200,
+				)
+			);
+
+			add_settings_field(
+				'woo_failed_order_limit',
+				'Max Failed Orders Per IP / Email',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_failed_order_limit',
+					'description' => 'Maximum failed orders from one IP address or billing email within the window above before further checkout attempts are rejected. 0 disables the rule. Targets card testing, where an attacker retries until a payment succeeds. Only failures reported shortly after the order was placed are counted, not back-office status changes or webhooks on old orders.',
+					'min'         => 0,
+					'max'         => 100,
+				)
+			);
+
+			$turnstile_ready = isset( $woo_options['captcha_type'] ) && 'turnstile' === $woo_options['captcha_type']
+				&& ! empty( $woo_options['turnstile_site_key'] ) && ! empty( $woo_options['turnstile_secret_key'] );
+
+			add_settings_field(
+				'woo_checkout_turnstile',
+				'Turnstile On Checkout',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_checkout_section',
+				array(
+					'label_for'   => 'woo_checkout_turnstile',
+					'description' => 'Require a Cloudflare Turnstile challenge before the classic checkout accepts an order (strongest bot protection). '
+						. 'It reuses the keys from the Captcha tab, therefore <strong>Captcha Type must be Cloudflare Turnstile</strong>. '
+						. 'Not supported by the Checkout block.'
+						. ( $turnstile_ready ? '' : ' <strong>Turnstile keys are missing, so this setting currently has no effect.</strong>' ),
+				)
+			);
+
+			add_settings_section(
+				'adc_security_woo_registration_section',
+				'Account Creation Protection',
+				null,
+				'adc_security_woocommerce'
+			);
+
+			add_settings_field(
+				'woo_registration_protection',
+				'Registration Abuse Protection',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_registration_section',
+				array(
+					'label_for'   => 'woo_registration_protection',
+					'description' => 'Master switch for every account-creation rule below. Covers the WooCommerce My Account form, the "create an account" option at checkout, and (optionally) the WordPress registration form.',
+				)
+			);
+
+			add_settings_field(
+				'woo_registration_honeypot',
+				'Registration Honeypot',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_registration_section',
+				array(
+					'label_for'   => 'woo_registration_honeypot',
+					'description' => 'Add an invisible field to the registration forms. Bots that fill every field are rejected.',
+				)
+			);
+
+			add_settings_field(
+				'woo_registration_rate_limit',
+				'Registrations Per IP (Hourly)',
+				array( $this, 'render_number_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_registration_section',
+				array(
+					'label_for'   => 'woo_registration_rate_limit',
+					'description' => 'Maximum registration attempts per IP address per hour, including submissions that fail WooCommerce validation. 0 disables the throttle. Ten attempts leave room for shoppers fixing form errors while still capping account farms.',
+					'min'         => 0,
+					'max'         => 100,
+				)
+			);
+
+			add_settings_field(
+				'woo_registration_disable_checkout_accounts',
+				'Disable Account Creation At Checkout',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_registration_section',
+				array(
+					'label_for'   => 'woo_registration_disable_checkout_accounts',
+					'description' => 'Remove the "create an account" option from checkout, so accounts can only be created from the My Account page. Do not enable this when guest checkout is disabled: the Checkout block refuses to place an order in that configuration, and the classic checkout keeps creating the account that the store settings require.',
+				)
+			);
+
+			add_settings_field(
+				'woo_registration_disable_myaccount_form',
+				'Disable My Account Registration Form',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_registration_section',
+				array(
+					'label_for'   => 'woo_registration_disable_myaccount_form',
+					'description' => 'Hide the registration form on the My Account page and reject direct POSTs to it, so new accounts must be created by the store. Existing customers can still log in and place orders.',
+				)
+			);
+
+			add_settings_field(
+				'woo_registration_protect_wp_form',
+				'Also Protect The WordPress Registration Form',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_registration_section',
+				array(
+					'label_for'   => 'woo_registration_protect_wp_form',
+					'description' => 'Apply the honeypot, the rate limit and the email filters to the WordPress registration form (<code>wp-login.php?action=register</code>) as well. Only relevant when "Anyone can register" is enabled in Settings &gt; General.',
+				)
+			);
+
+			add_settings_section(
+				'adc_security_woo_email_section',
+				'Email Filtering',
+				null,
+				'adc_security_woocommerce'
+			);
+
+			add_settings_field(
+				'woo_block_disposable_emails',
+				'Block Disposable Email Domains',
+				array( $this, 'render_checkbox_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_email_section',
+				array(
+					'label_for'   => 'woo_block_disposable_emails',
+					'description' => 'Reject checkout and registration submissions that use a known disposable/throwaway mailbox provider (mailinator.com, yopmail.com and similar).',
+				)
+			);
+
+			add_settings_field(
+				'woo_blocked_email_domains',
+				'Additional Blocked Domains',
+				array( $this, 'render_textarea_field' ),
+				'adc_security_woocommerce',
+				'adc_security_woo_email_section',
+				array(
+					'label_for'   => 'woo_blocked_email_domains',
+					'description' => 'One domain per line. Subdomains are blocked too. The built-in disposable provider list always applies; the <code>adc_security_blocked_email_domains</code> filter can extend the list from code.',
+				)
+			);
+		}
 	}
 
 	/**
@@ -993,6 +1314,9 @@ class ADC_Security_Settings {
                 <a href="?page=adc-security&tab=login" class="nav-tab <?php echo 'login' === $active_tab ? 'nav-tab-active' : ''; ?>">Login Security</a>
                 <a href="?page=adc-security&tab=2fa" class="nav-tab <?php echo '2fa' === $active_tab ? 'nav-tab-active' : ''; ?>">Two-Factor Auth</a>
                 <a href="?page=adc-security&tab=captcha" class="nav-tab <?php echo 'captcha' === $active_tab ? 'nav-tab-active' : ''; ?>">Captcha</a>
+                <?php if ( class_exists( 'WooCommerce' ) ) : ?>
+                    <a href="?page=adc-security&tab=woocommerce" class="nav-tab <?php echo 'woocommerce' === $active_tab ? 'nav-tab-active' : ''; ?>">WooCommerce</a>
+                <?php endif; ?>
                 <a href="?page=adc-security&tab=hardening" class="nav-tab <?php echo 'hardening' === $active_tab ? 'nav-tab-active' : ''; ?>">Hardening</a>
                 <a href="?page=adc-security&tab=activity" class="nav-tab <?php echo 'activity' === $active_tab ? 'nav-tab-active' : ''; ?>">Activity</a>
                 <a href="?page=adc-security&tab=support" class="nav-tab <?php echo 'support' === $active_tab ? 'nav-tab-active' : ''; ?>">System & Support</a>
@@ -1099,6 +1423,8 @@ class ADC_Security_Settings {
                         do_settings_sections( 'adc_security_hardening' );
                     } elseif ( '2fa' === $active_tab ) {
                         do_settings_sections( 'adc_security_2fa' );
+                    } elseif ( 'woocommerce' === $active_tab && class_exists( 'WooCommerce' ) ) {
+                        do_settings_sections( 'adc_security_woocommerce' );
                     }
                     
                      submit_button();
@@ -1181,6 +1507,16 @@ class ADC_Security_Settings {
 			'password_block_common',
 			'password_check_hibp',
 			'rate_limiting_enabled',
+			'woo_checkout_protection',
+			'woo_monitor_mode',
+			'woo_checkout_honeypot',
+			'woo_checkout_turnstile',
+			'woo_registration_protection',
+			'woo_registration_honeypot',
+			'woo_registration_disable_checkout_accounts',
+			'woo_registration_disable_myaccount_form',
+			'woo_registration_protect_wp_form',
+			'woo_block_disposable_emails',
 		);
 		foreach ( $checkbox_keys as $key ) {
 			if ( isset( $input[ $key ] ) ) {
@@ -1226,6 +1562,41 @@ class ADC_Security_Settings {
 		}
 		if ( isset( $input['password_min_length'] ) ) {
 			$new_input['password_min_length'] = min( 128, absint( $input['password_min_length'] ) );
+		}
+
+		// WooCommerce abuse prevention: numeric thresholds (0 disables most rules).
+		$woo_numbers = array(
+			'woo_checkout_min_seconds'    => 120,
+			'woo_checkout_rate_limit'     => 500,
+			'woo_cart_write_limit'        => 1000,
+			'woo_order_window_minutes'    => 1440,
+			'woo_order_ip_limit'          => 200,
+			'woo_order_email_limit'       => 500,
+			'woo_order_phone_limit'       => 200,
+			'woo_order_address_limit'     => 200,
+			'woo_failed_order_limit'      => 100,
+			'woo_registration_rate_limit' => 100,
+		);
+		foreach ( $woo_numbers as $key => $max ) {
+			if ( isset( $input[ $key ] ) ) {
+				$new_input[ $key ] = min( $max, absint( $input[ $key ] ) );
+			}
+		}
+
+		// Checkout Origin/Referer enforcement mode.
+		if ( isset( $input['woo_checkout_referrer_check'] ) ) {
+			$allowed_modes = array( 'off', 'mismatch', 'required' );
+			$new_input['woo_checkout_referrer_check'] = in_array( $input['woo_checkout_referrer_check'], $allowed_modes, true ) ? $input['woo_checkout_referrer_check'] : 'off';
+		}
+
+		// The order window must stay usable; anything below 1 minute falls back to 1.
+		if ( isset( $new_input['woo_order_window_minutes'] ) && $new_input['woo_order_window_minutes'] < 1 ) {
+			$new_input['woo_order_window_minutes'] = 1;
+		}
+
+		// Normalise the extra blocked email domains (built-in disposable list always applies).
+		if ( isset( $input['woo_blocked_email_domains'] ) && is_string( $input['woo_blocked_email_domains'] ) ) {
+			$new_input['woo_blocked_email_domains'] = implode( "\n", ADC_Security_Woo_Rules::parse_domain_list( wp_unslash( $input['woo_blocked_email_domains'] ) ) );
 		}
 
 		// IP Allowlist / Denylist: validate, normalise, deduplicate

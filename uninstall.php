@@ -53,6 +53,11 @@ foreach ( $two_fa_meta_keys as $meta_key ) {
 	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key = %s", $meta_key ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName
 }
 
+// Remove the last-login timestamps written by the Users screen columns.
+// Order IP meta (_adc_security_order_ip) is intentionally kept: it belongs to
+// the order record and is useful for post-incident fraud review.
+$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key = %s", '_admin_last_login' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName
+
 // Remove pending-login / lockout / one-time-display transients created during 2FA.
 $wpdb->query(
 	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_2fa\_%' OR option_name LIKE '\_transient\_timeout\_adc\_2fa\_%'"
@@ -61,6 +66,11 @@ $wpdb->query(
 // Remove rate-limiter token-bucket transients (dynamic per-IP names).
 $wpdb->query(
 	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_rl\_%' OR option_name LIKE '\_transient\_timeout\_adc\_rl\_%'"
+);
+
+// Remove WooCommerce checkout-attempt, order-velocity and registration counters.
+$wpdb->query(
+	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_woo\_%' OR option_name LIKE '\_transient\_timeout\_adc\_woo\_%'"
 );
 
 // Remove file integrity / plugin health scan state and clear their crons.

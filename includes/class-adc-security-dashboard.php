@@ -51,6 +51,10 @@ class ADC_Security_Dashboard {
 			'admins_without_2fa' => $admins_without_2fa,
 		);
 
+		if ( class_exists( 'WooCommerce' ) ) {
+			$score_extra['woocommerce_active'] = true;
+		}
+
 		if ( class_exists( 'ADC_Security_Integrity' ) ) {
 			$integrity_result = ADC_Security_Integrity::get_last_result();
 			if ( ! empty( $integrity_result['completed_at'] ) ) {

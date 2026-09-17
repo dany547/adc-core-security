@@ -71,6 +71,37 @@ if ( $with_default_admin['score'] >= $full['score'] ) {
 	$fail( 'A default admin username should reduce the score below the fully hardened baseline.' );
 }
 
+// On a WooCommerce site the store check is added, and it must be satisfiable.
+$woo_hardened = ADC_Security_Score::calculate(
+	array_merge( $full_options, array( 'woo_checkout_protection' => 1 ) ),
+	array( 'managed' => true ),
+	array( 'has_backup' => true ),
+	array(
+		'https'              => true,
+		'default_admin_user' => false,
+		'admins_without_2fa' => 0,
+		'woocommerce_active' => true,
+	)
+);
+if ( 100 !== $woo_hardened['score'] ) {
+	$fail( 'A hardened WooCommerce site should score 100, got ' . $woo_hardened['score'] . '.' );
+}
+
+$woo_unprotected = ADC_Security_Score::calculate(
+	$full_options,
+	array( 'managed' => true ),
+	array( 'has_backup' => true ),
+	array(
+		'https'              => true,
+		'default_admin_user' => false,
+		'admins_without_2fa' => 0,
+		'woocommerce_active' => true,
+	)
+);
+if ( $woo_unprotected['score'] >= $woo_hardened['score'] ) {
+	$fail( 'Disabling WooCommerce checkout protection should lower the score.' );
+}
+
 $grade_map = array(
 	100 => 'A',
 	90  => 'A',
