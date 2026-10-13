@@ -23,7 +23,7 @@ class ADC_Security_Ip {
 	 *
 	 * By default this is REMOTE_ADDR. If the plugin is configured with a
 	 * trusted proxy header and REMOTE_ADDR matches the configured trusted
-	 * proxy IP/CIDR list, the first IP from that header is used instead.
+	 * proxy IP/CIDR list, the closest untrusted IP in that header is used instead.
 	 *
 	 * @return string A validated IPv4/IPv6 address, or '' if none could be determined.
 	 */
@@ -47,9 +47,37 @@ class ADC_Security_Ip {
 		}
 
 		$header_value = (string) wp_unslash( $_SERVER[ $server_key ] );
-		$candidate    = self::sanitize_ip( strtok( $header_value, ',' ) );
+		$candidate    = self::resolve_forwarded_ip( $header_value, $proxies );
 
 		return '' !== $candidate ? $candidate : $remote;
+	}
+
+	/**
+	 * Pick the client IP out of a forwarded-for style header.
+	 *
+	 * The left side of X-Forwarded-For is client-controlled, so the list is read
+	 * from the right and every hop that is itself a trusted proxy is skipped; the
+	 * first untrusted address is the closest one a trusted proxy actually saw.
+	 *
+	 * @param string   $header_value Raw header value (comma separated).
+	 * @param string[] $proxies      Trusted proxy IPs/CIDRs.
+	 * @return string Validated IP, or '' if none usable.
+	 */
+	public static function resolve_forwarded_ip( $header_value, array $proxies ) {
+		$hops = array_reverse( array_map( 'trim', explode( ',', (string) $header_value ) ) );
+
+		foreach ( $hops as $hop ) {
+			$ip = self::sanitize_ip( $hop );
+			if ( '' === $ip ) {
+				// A malformed hop means we cannot trust anything further left.
+				return '';
+			}
+			if ( ! self::ip_matches_any( $ip, $proxies ) ) {
+				return $ip;
+			}
+		}
+
+		return '';
 	}
 
 	/**

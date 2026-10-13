@@ -67,4 +67,52 @@ if ( 0 !== strpos( $uri, 'otpauth://totp/' ) || false === strpos( $uri, rawurlen
 	$fail( 'Provisioning URI is malformed: ' . $uri );
 }
 
+// verify_step(): returns the matched counter (int) so callers can enforce replay protection.
+$step = ADC_Security_Totp::verify_step( $secret, '94287082', 1, 59, 30, 8 );
+if ( 1 !== $step ) {
+	$fail( 'verify_step() did not return counter 1 for the RFC vector at t=59.' );
+}
+
+// Counter 0 (one step in the past) is returned as int 0, not false.
+$code_prev = ADC_Security_Totp::totp( $secret, 29, 30, 8 );
+if ( 0 !== ADC_Security_Totp::verify_step( $secret, $code_prev, 1, 59, 30, 8 ) ) {
+	$fail( 'verify_step() did not return counter 0 for a code one step in the past.' );
+}
+
+// Window edges: a step outside the window is rejected, inside the window accepted.
+$code_future2 = ADC_Security_Totp::totp( $secret, 59 + 60, 30, 8 ); // counter 3 relative to t=59 (counter 1).
+if ( false !== ADC_Security_Totp::verify_step( $secret, $code_future2, 1, 59, 30, 8 ) ) {
+	$fail( 'verify_step() accepted a code two steps ahead with window=1.' );
+}
+if ( 3 !== ADC_Security_Totp::verify_step( $secret, $code_future2, 2, 59, 30, 8 ) ) {
+	$fail( 'verify_step() did not accept a code two steps ahead with window=2.' );
+}
+if ( false !== ADC_Security_Totp::verify_step( $secret, $code_prev, 0, 59, 30, 8 ) ) {
+	$fail( 'verify_step() accepted an adjacent-step code with window=0.' );
+}
+
+// Wrong code (same length, last digit changed) must be rejected.
+$expected = ADC_Security_Totp::totp( $secret, 59, 30, 8 );
+$wrong    = substr( $expected, 0, 7 ) . ( ( (int) substr( $expected, 7 ) + 1 ) % 10 );
+if ( false !== ADC_Security_Totp::verify_step( $secret, $wrong, 1, 59, 30, 8 ) ) {
+	$fail( 'verify_step() accepted a wrong code.' );
+}
+
+// Non-digit, wrong-length and empty input are rejected without error.
+foreach ( array( 'abcdefgh', '1234', '1234567890', '', '9428-7082' ) as $bad ) {
+	if ( false !== ADC_Security_Totp::verify_step( $secret, $bad, 1, 59, 30, 8 ) ) {
+		$fail( "verify_step() accepted malformed input '$bad'." );
+	}
+}
+
+// Surrounding/internal whitespace is tolerated, as in verify().
+if ( 1 !== ADC_Security_Totp::verify_step( $secret, ' 9428 7082 ', 1, 59, 30, 8 ) ) {
+	$fail( 'verify_step() did not tolerate whitespace in a valid code.' );
+}
+
+// verify() wrapper stays boolean.
+if ( true !== ADC_Security_Totp::verify( $secret, '94287082', 1, 59, 30, 8 ) || false !== ADC_Security_Totp::verify( $secret, $wrong, 1, 59, 30, 8 ) ) {
+	$fail( 'verify() wrapper no longer returns a strict boolean.' );
+}
+
 fwrite( STDOUT, "TOTP tests passed.\n" );

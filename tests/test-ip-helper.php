@@ -33,4 +33,21 @@ foreach ( $cases as list( $ip, $entry, $expected ) ) {
 	}
 }
 
+$proxies = array( '10.0.0.0/8', '203.0.113.7' );
+$xff_cases = array(
+	// Spoofed leftmost value must be ignored; the real client is the first untrusted hop from the right.
+	array( '1.2.3.4, 198.51.100.9, 10.0.0.2', '198.51.100.9' ),
+	array( '198.51.100.9', '198.51.100.9' ),
+	array( '198.51.100.9, 203.0.113.7, 10.1.1.1', '198.51.100.9' ),
+	array( '10.0.0.5, 10.0.0.2', '' ),
+	array( '198.51.100.9, garbage', '' ),
+	array( '', '' ),
+);
+foreach ( $xff_cases as list( $header, $expected ) ) {
+	$actual = ADC_Security_Ip::resolve_forwarded_ip( $header, $proxies );
+	if ( $actual !== $expected ) {
+		$fail( sprintf( 'resolve_forwarded_ip(%s) expected "%s", got "%s".', $header, $expected, $actual ) );
+	}
+}
+
 fwrite( STDOUT, "IP helper tests passed.\n" );

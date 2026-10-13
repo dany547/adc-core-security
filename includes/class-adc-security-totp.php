@@ -128,8 +128,43 @@ class ADC_Security_Totp {
 	}
 
 	/**
-	 * Verify a submitted code against the current time, tolerating clock
-	 * drift within +/- $window time steps.
+	 * Verify a submitted code, tolerating clock drift within +/- $window time
+	 * steps, and report WHICH time step (counter) it matched. Callers use the
+	 * counter for replay protection (RFC 6238 section 5.2): a step that has
+	 * already been accepted must never be accepted again.
+	 *
+	 * @param string   $secret Base32-encoded secret.
+	 * @param string   $code   Submitted code.
+	 * @param int      $window Number of steps to check on either side of now.
+	 * @param int|null $time   Unix timestamp, defaults to now.
+	 * @param int      $period Time step in seconds.
+	 * @param int      $digits Output digit count.
+	 * @return int|false Matched counter, or false when no step matches.
+	 */
+	public static function verify_step( $secret, $code, $window = 1, $time = null, $period = 30, $digits = 6 ) {
+		$code = preg_replace( '/\s+/', '', (string) $code );
+		if ( '' === $code || ! ctype_digit( $code ) || strlen( $code ) !== (int) $digits ) {
+			return false;
+		}
+
+		$time          = null === $time ? time() : (int) $time;
+		$base          = (int) floor( $time / max( 1, $period ) );
+		$secret_binary = self::base32_decode( $secret );
+		$window        = max( 0, (int) $window );
+
+		for ( $offset = -$window; $offset <= $window; $offset++ ) {
+			$counter  = $base + $offset;
+			$expected = self::hotp( $secret_binary, $counter, $digits );
+			if ( hash_equals( $expected, $code ) ) {
+				return $counter;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Boolean wrapper around verify_step().
 	 *
 	 * @param string   $secret Base32-encoded secret.
 	 * @param string   $code   Submitted code.
@@ -140,23 +175,7 @@ class ADC_Security_Totp {
 	 * @return bool
 	 */
 	public static function verify( $secret, $code, $window = 1, $time = null, $period = 30, $digits = 6 ) {
-		$code = preg_replace( '/\s+/', '', (string) $code );
-		if ( '' === $code || ! ctype_digit( $code ) ) {
-			return false;
-		}
-
-		$time          = null === $time ? time() : (int) $time;
-		$secret_binary = self::base32_decode( $secret );
-
-		for ( $offset = -$window; $offset <= $window; $offset++ ) {
-			$counter  = (int) floor( $time / max( 1, $period ) ) + $offset;
-			$expected = self::hotp( $secret_binary, $counter, $digits );
-			if ( hash_equals( $expected, $code ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return false !== self::verify_step( $secret, $code, $window, $time, $period, $digits );
 	}
 
 	/**

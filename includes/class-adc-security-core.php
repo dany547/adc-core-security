@@ -242,6 +242,12 @@ class ADC_Security_Core {
 			$changed = true;
 		}
 
+		// 1.12.1: older key backups stored the whole wp-config.php (DB credentials
+		// included) in wp_options. Reduce them to the key lines only.
+		if ( version_compare( (string) get_option( 'adc_security_version', '0.0.0' ), '1.12.1', '<' ) && class_exists( 'ADC_Security_Keys' ) ) {
+			ADC_Security_Keys::scrub_legacy_backup();
+		}
+
 		// 1.12.0 replaced the CSP checkbox with a mode. Derive it from the old state:
 		// a site that had CSP ticked keeps it (custom if it had text, otherwise standard);
 		// every other site stays off, even if old custom text exists. Only runs once,

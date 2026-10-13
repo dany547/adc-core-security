@@ -86,7 +86,7 @@ $build_salt_body = static function ( $suffix ) use ( $key_names ) {
 };
 
 $build_config = static function ( $suffix ) use ( $key_names ) {
-	$lines = array( '<?php', "define( 'DB_NAME', 'wp' );" );
+	$lines = array( '<?php', "define( 'DB_NAME', 'wp' );", "define( 'DB_PASSWORD', 'fixture-db-secret' );" );
 	foreach ( $key_names as $name ) {
 		$lines[] = "define('" . $name . "', 'old-" . $suffix . "-" . $name . "');";
 	}
@@ -233,6 +233,107 @@ if ( is_wp_error( $manager->restore() ) ) {
 }
 if ( $original_config !== file_get_contents( $config_path ) ) {
 	$fail( 'Restore after two consecutive regenerations did not recover the true original keys.' );
+}
+
+// The stored backup holds only the key define() lines, never the whole file,
+// so database credentials from wp-config.php never reach the options table.
+delete_option( ADC_Security_Keys::BACKUP_OPTION );
+file_put_contents( $config_path, $build_config( 'lines-only' ) );
+$mock_salt_response = array(
+	'response' => array( 'code' => 200 ),
+	'body'     => $build_salt_body( 'lines-only-rotated' ),
+);
+if ( is_wp_error( $manager->regenerate() ) ) {
+	$fail( 'Regeneration failed unexpectedly while checking the backup format.' );
+}
+$stored_backup = get_option( ADC_Security_Keys::BACKUP_OPTION, array() );
+$stored_json   = json_encode( $stored_backup );
+foreach ( array( 'DB_PASSWORD', 'DB_NAME', 'fixture-db-secret' ) as $needle ) {
+	if ( false !== strpos( $stored_json, $needle ) ) {
+		$fail( 'The stored backup contains database credential text: ' . $needle );
+	}
+}
+if ( array_key_exists( 'content', $stored_backup ) ) {
+	$fail( 'The stored backup still contains a full-file content copy.' );
+}
+if ( ! isset( $stored_backup['lines'] ) || 8 !== count( $stored_backup['lines'] ) ) {
+	$fail( 'The stored backup does not contain exactly eight key lines.' );
+}
+foreach ( $key_names as $name ) {
+	if ( ! isset( $stored_backup['lines'][ $name ] ) ) {
+		$fail( 'The stored backup is missing the original line for ' . $name );
+	}
+}
+
+// Restore after regeneration returns the key lines to their originals while
+// keeping an unrelated edit made to wp-config.php in the meantime.
+delete_option( ADC_Security_Keys::BACKUP_OPTION );
+file_put_contents( $config_path, $build_config( 'edit' ) );
+$mock_salt_response = array(
+	'response' => array( 'code' => 200 ),
+	'body'     => $build_salt_body( 'edit-rotated' ),
+);
+if ( is_wp_error( $manager->regenerate() ) ) {
+	$fail( 'Regeneration failed unexpectedly before the unrelated-edit restore test.' );
+}
+$unrelated_old = "\$table_prefix = 'wp_';";
+$unrelated_new = "\$table_prefix = 'wp_edited_';";
+$after_regen   = file_get_contents( $config_path );
+if ( false === strpos( $after_regen, $unrelated_old ) ) {
+	$fail( 'Unrelated line was not present before the simulated edit.' );
+}
+file_put_contents( $config_path, str_replace( $unrelated_old, $unrelated_new, $after_regen ) );
+if ( is_wp_error( $manager->restore() ) ) {
+	$fail( 'Restore after regeneration with an unrelated edit failed unexpectedly.' );
+}
+$expected_edited = str_replace( $unrelated_old, $unrelated_new, $build_config( 'edit' ) );
+if ( $expected_edited !== file_get_contents( $config_path ) ) {
+	$fail( 'Restore did not keep the unrelated edit or did not restore the original key lines.' );
+}
+
+// A legacy backup holding the full file is converted to lines-only format and
+// the full copy is removed; restore() then works from the converted backup.
+delete_option( ADC_Security_Keys::BACKUP_OPTION );
+$legacy_content = $build_config( 'legacy' );
+update_option(
+	ADC_Security_Keys::BACKUP_OPTION,
+	array(
+		'path'       => realpath( $config_path ),
+		'content'    => $legacy_content,
+		'created_at' => '2025-01-01 00:00:00',
+	),
+	false
+);
+ADC_Security_Keys::scrub_legacy_backup();
+$converted = get_option( ADC_Security_Keys::BACKUP_OPTION, array() );
+if ( array_key_exists( 'content', $converted ) || false !== strpos( json_encode( $converted ), 'fixture-db-secret' ) ) {
+	$fail( 'A legacy backup still contains the full wp-config.php copy after scrubbing.' );
+}
+if ( empty( $converted['lines'] ) || 8 !== count( $converted['lines'] ) ) {
+	$fail( 'A converted legacy backup does not contain the eight key lines.' );
+}
+file_put_contents( $config_path, $build_config( 'current' ) );
+if ( is_wp_error( $manager->restore() ) ) {
+	$fail( 'Restore from a converted legacy backup failed unexpectedly.' );
+}
+if ( $legacy_content !== file_get_contents( $config_path ) ) {
+	$fail( 'Restore from a converted legacy backup did not return wp-config.php to its original contents.' );
+}
+
+// A legacy backup whose full copy has no key lines is simply removed.
+delete_option( ADC_Security_Keys::BACKUP_OPTION );
+update_option(
+	ADC_Security_Keys::BACKUP_OPTION,
+	array(
+		'path'       => realpath( $config_path ),
+		'content'    => "<?php\ndefine('DB_PASSWORD', 'legacy-only-secret');\n",
+		'created_at' => '2025-01-01 00:00:00',
+	),
+	false
+);
+$empty_scrub = ADC_Security_Keys::scrub_legacy_backup();
+if ( array() !== $empty_scrub || 'none' !== get_option( ADC_Security_Keys::BACKUP_OPTION, 'none' ) ) {
+	$fail( 'A legacy backup without key lines was not deleted.' );
 }
 
 unlink( $config_path );

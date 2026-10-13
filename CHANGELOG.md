@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.12.1] - 2026-10-13
+### Security
+- **Client IP behind a proxy could be spoofed**: with a trusted proxy configured, the plugin read the first address in `X-Forwarded-For`, which the visitor controls, so lockouts and rate limits could be dodged. The header is now read from the right, skipping trusted proxies.
+- **Security key backups no longer store `wp-config.php`**: the Restore backup kept the whole file, database password included, in `wp_options`. It now keeps only the eight key lines, restores only those lines, and older backups are converted on upgrade.
+- **Two-factor authentication**: see Changed below.
+
+### Fixed
+- **Fatal error when the plugin is installed twice** (`Cannot redeclare function adc_security()`): a second copy, such as an old `adc-core-security-1.3.7` folder next to `adc-security`, now stops loading and shows an admin notice naming the duplicate folder instead of crashing the site.
+
+### Changed
+- **2FA codes can only be used once** (RFC 6238 replay protection) at login, enrollment and re-authentication.
+- **2FA brute-force limits per user**, in addition to the per-IP limit, and the pending login is cancelled after repeated failures.
+- **Re-authentication for sensitive 2FA actions**: disabling 2FA or regenerating recovery codes needs a current authenticator or recovery code; an administrator disabling 2FA for another user confirms with their own password.
+- **Audit and alerts**: successful 2FA logins and recovery-code use are logged, and the user is emailed when a recovery code is used or 2FA is turned off.
+- **Stronger 2FA secret storage**: a separate derived key and authenticated encryption; existing secrets keep working and are upgraded on first use.
+- Recovery codes cannot be spent twice by simultaneous requests, and the post-login redirect is validated.
+- The CSP report endpoint is exempt from the general REST write limit; it has its own per-IP limit.
+
 ## [1.12.0] - 2026-10-13
 ### Added
 - **Content-Security-Policy modes**: the single CSP checkbox is replaced by Off, Standard and Custom. Standard builds the policy from the sources you choose: service presets (Google Tag Manager, Google Analytics 4, and others, each with a description), plus an Advanced list per directive where each default source can be removed and extra domains can be added. A read-only preview shows the resulting policy as you edit. Custom sends the text you write and lists warnings for risky values such as `unsafe-eval` or wildcard sources.

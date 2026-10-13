@@ -85,8 +85,8 @@ class ADC_Security_Keys {
 
 		$status['writable'] = is_writable( $path );
 
-		$backup = get_option( self::BACKUP_OPTION, array() );
-		if ( is_array( $backup ) && ! empty( $backup['content'] ) ) {
+		$backup = self::scrub_legacy_backup();
+		if ( ! empty( $backup['lines'] ) ) {
 			$status['has_backup']   = true;
 			$status['backed_up_at'] = isset( $backup['created_at'] ) ? $backup['created_at'] : '';
 		}
@@ -147,12 +147,15 @@ class ADC_Security_Keys {
 		// Only keep the true pre-regeneration backup; a later regenerate() must
 		// not overwrite it with an already-rotated set of keys, or "Restore"
 		// would silently stop being able to recover the original values.
-		if ( ! get_option( self::BACKUP_OPTION, array() ) ) {
+		// Only the key/salt define() lines are stored, never the whole file, so the
+		// database never holds DB credentials from wp-config.php.
+		$existing_backup = self::scrub_legacy_backup();
+		if ( ! is_array( $existing_backup ) || empty( $existing_backup ) ) {
 			update_option(
 				self::BACKUP_OPTION,
 				array(
 					'path'       => $path,
-					'content'    => $contents,
+					'lines'      => self::extract_key_lines( $contents ),
 					'created_at' => current_time( 'mysql', true ),
 				),
 				false
@@ -178,18 +181,81 @@ class ADC_Security_Keys {
 			return $path;
 		}
 
-		$backup = get_option( self::BACKUP_OPTION, array() );
-		if ( ! is_array( $backup ) || empty( $backup['content'] ) || ! isset( $backup['path'] ) || $backup['path'] !== $path ) {
+		$backup = self::scrub_legacy_backup();
+		if ( ! is_array( $backup ) || empty( $backup['lines'] ) || ! isset( $backup['path'] ) || $backup['path'] !== $path ) {
 			return new WP_Error( 'adc_keys_no_backup', 'No matching security key backup is available.' );
 		}
 
-		$result = $this->write_file( $path, (string) $backup['content'] );
+		$contents = $this->read_file( $path );
+		if ( is_wp_error( $contents ) ) {
+			return $contents;
+		}
+
+		$restored = $contents;
+		foreach ( $backup['lines'] as $key_name => $line ) {
+			$pattern = '/^[ \t]*define\(\s*[\'"]' . preg_quote( $key_name, '/' ) . '[\'"]\s*,.*\);.*$/m';
+			if ( ! preg_match( $pattern, $restored ) ) {
+				return new WP_Error( 'adc_keys_definition_not_found', sprintf( 'The %s definition could not be found in wp-config.php. No changes were made.', $key_name ) );
+			}
+			$restored = preg_replace_callback(
+				$pattern,
+				static function () use ( $line ) {
+					return $line;
+				},
+				$restored,
+				1
+			);
+		}
+
+		$result = $this->write_file( $path, $restored );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 
 		delete_option( self::BACKUP_OPTION );
 		return true;
+	}
+
+	/**
+	 * Pull only the eight key/salt define() lines out of a wp-config.php body.
+	 *
+	 * @param string $contents wp-config.php contents.
+	 * @return array<string,string> Key name => full original line.
+	 */
+	private static function extract_key_lines( $contents ) {
+		$lines = array();
+		foreach ( self::get_key_names() as $key_name ) {
+			$pattern = '/^[ \t]*define\(\s*[\'"]' . preg_quote( $key_name, '/' ) . '[\'"]\s*,.*\);.*$/m';
+			if ( preg_match( $pattern, (string) $contents, $match ) ) {
+				$lines[ $key_name ] = rtrim( $match[0], "\r\n" );
+			}
+		}
+		return $lines;
+	}
+
+	/**
+	 * Convert a pre-1.12.1 backup (which stored the whole wp-config.php, including
+	 * database credentials) to the lines-only format and drop the full copy.
+	 *
+	 * @return array The stored backup, or an empty array.
+	 */
+	public static function scrub_legacy_backup() {
+		$backup = get_option( self::BACKUP_OPTION, array() );
+		if ( ! is_array( $backup ) ) {
+			return array();
+		}
+
+		if ( isset( $backup['content'] ) ) {
+			$backup['lines'] = self::extract_key_lines( (string) $backup['content'] );
+			unset( $backup['content'] );
+			if ( empty( $backup['lines'] ) ) {
+				delete_option( self::BACKUP_OPTION );
+				return array();
+			}
+			update_option( self::BACKUP_OPTION, $backup, false );
+		}
+
+		return $backup;
 	}
 
 	/**
