@@ -84,6 +84,7 @@ jobs:
             "includes/class-adc-security-htaccess.php"
             "includes/class-adc-security-keys.php"
             "includes/class-adc-security-csp.php"
+            "includes/class-adc-security-csp-reports.php"
             "includes/class-adc-security-captcha.php"
             "includes/class-adc-security-logger.php"
             "includes/class-adc-security-updater.php"
@@ -126,11 +127,17 @@ jobs:
       - name: Test CSP policy
         run: php tests/test-csp-policy.php
 
+      - name: Test CSP reports
+        run: php tests/test-csp-reports.php
+
       - name: Test security score
         run: php tests/test-security-score.php
 
       - name: Test TOTP
         run: php tests/test-totp.php
+
+      - name: Test 2FA crypto
+        run: php tests/test-2fa-crypto.php
 
       - name: Test IP helper
         run: php tests/test-ip-helper.php
