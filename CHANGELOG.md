@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.14.0] - 2026-10-13
+## [1.13.1] - 2026-10-13
 ### Added
 - **CSP site scanner**: the Hardening tab can now scan your public pages as a visitor (home page, latest posts and pages, privacy policy and, with WooCommerce, shop, cart, checkout and account, plus up to three extra pages you add) and list every outside service they load, grouped by what it needs (scripts, stylesheets, images, fonts, network requests, frames). Tick the ones you trust and press **Allow selected**; nothing is allowed by default. Your own subdomains are listed separately with their exact host, and anything loaded over plain `http://` or from a bare IP address is flagged and cannot be ticked.
 - **Detected services**: when the scan recognises a service such as Google Tag Manager, the panel also lists the extra origins that service usually needs but which a page scan cannot see. They are unticked and only shown for services you actually use.
