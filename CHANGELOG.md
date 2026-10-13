@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.14.0] - 2026-10-13
+### Added
+- **CSP site scanner**: the Hardening tab can now scan your public pages as a visitor (home page, latest posts and pages, privacy policy and, with WooCommerce, shop, cart, checkout and account, plus up to three extra pages you add) and list every outside service they load, grouped by what it needs (scripts, stylesheets, images, fonts, network requests, frames). Tick the ones you trust and press **Allow selected**; nothing is allowed by default. Your own subdomains are listed separately with their exact host, and anything loaded over plain `http://` or from a bare IP address is flagged and cannot be ticked.
+- **Detected services**: when the scan recognises a service such as Google Tag Manager, the panel also lists the extra origins that service usually needs but which a page scan cannot see. They are unticked and only shown for services you actually use.
+- The scan uses one HTML parser on every host and stops fetching after 20 seconds, so results do not depend on installed PHP extensions and the scan stays inside PHP time limits.
+
+### Changed
+- The ready-made service checkboxes are now a collapsed, optional section under the scanner. The scanner is the main way to build a policy, and Report-Only plus Blocked sources covers what a page scan cannot see (resources that scripts load later).
+- **Panels with their own buttons now sit above the settings form**, so Save Changes is the last control on every tab: 2FA enrollment, blocked IPs, CSP blocked sources, `.htaccess` and key tools (collapsed under Server tools) and the Firewall tab's recent matches.
+
 ## [1.13.0] - 2026-10-13
 ### Added
 - **ADC Firewall Rules**: the virtual patching module now has its own **Firewall** tab. Each rule shows its CVE, severity, affected and fixed WordPress versions, a status badge and blocks in the last 7 days. A rule shows **Not needed** (and does not run at all) once the installed WordPress already includes its fix, using the fixed version of your own release branch. Rules are opt-in; **Log only** mode records matches without blocking so you can test first.

@@ -322,9 +322,96 @@
     margin-bottom: 12px;
 }
 
+/* CSP site scanner (Hardening tab). */
+.adc-csp-scanner .adc-csp-scan-form textarea {
+    width: 100%;
+    max-width: 760px;
+}
+
+.adc-csp-scanner .adc-csp-table td code {
+    word-break: break-all;
+}
+
+.adc-csp-scanner h3 {
+    margin-top: 20px;
+}
+
+.adc-csp-scanner h4 {
+    margin: 14px 0 4px;
+}
+
+.adc-csp-allowed {
+    color: #1d6b2c;
+    font-weight: 600;
+}
+
+.adc-csp-badge {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #f0f0f1;
+    color: #3c434a;
+    font-size: 12px;
+}
+
+.adc-csp-badge-warn {
+    background: #fcf0f1;
+    color: #8a2424;
+}
+
+.adc-csp-badge-caution {
+    background: #fcf9e8;
+    color: #8a5d00;
+}
+
+.adc-csp-badge-ok {
+    background: #edfaef;
+    color: #1d6b2c;
+}
+
+.adc-csp-mode-note {
+    background: #fcf9e8;
+    border-left: 4px solid #dba617;
+    padding: 8px 12px;
+    margin: 10px 0;
+    max-width: 760px;
+}
+
+.adc-csp-select-row {
+    margin: 8px 0;
+}
+
+.adc-csp-companions {
+    margin-top: 20px;
+    padding-top: 10px;
+    border-top: 1px solid #dcdcde;
+}
+
+.adc-csp-presets {
+    margin: 12px 0;
+}
+
+.adc-csp-presets > summary {
+    cursor: pointer;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.adc-csp-existing details,
+.adc-csp-pages,
+.adc-csp-errors {
+    margin: 8px 0;
+}
+
 @media screen and (max-width: 782px) {
     .adc-csp-panel {
         margin-left: 12px;
+    }
+
+    .adc-csp-scanner .adc-csp-table {
+        display: block;
+        overflow-x: auto;
     }
 }
 
@@ -412,4 +499,13 @@
     .adc-fw-indent {
         margin-left: 12px;
     }
+}
+
+.adc-tools {
+    margin: 16px 0 24px;
+}
+
+.adc-tools > summary {
+    cursor: pointer;
+    padding: 8px 0;
 }

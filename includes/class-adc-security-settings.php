@@ -48,6 +48,9 @@ class ADC_Security_Settings {
 		add_action( 'admin_post_adc_security_export_events', array( $this, 'handle_export_events' ) );
 		add_action( 'admin_post_adc_security_csp_allow', array( $this, 'handle_csp_allow_source' ) );
 		add_action( 'admin_post_adc_security_csp_clear_reports', array( $this, 'handle_csp_clear_reports' ) );
+		add_action( 'admin_post_adc_security_csp_scan', array( $this, 'handle_csp_scan' ) );
+		add_action( 'admin_post_adc_security_csp_apply_scan', array( $this, 'handle_csp_apply_scan' ) );
+		add_action( 'admin_post_adc_security_csp_clear_scan', array( $this, 'handle_csp_clear_scan' ) );
         // Removed global admin_head hook to prevent interference and fix warnings
 	}
 
@@ -420,7 +423,7 @@ class ADC_Security_Settings {
 			'adc_security_headers_section',
 			array(
 				'class'       => 'adc-field-csp',
-				'description' => 'Standard builds the policy from the options below and works for most sites. Custom sends exactly the text you write. Off sends no CSP header. Changes apply as soon as you save, and the header is only sent when Enable Security Headers is on.',
+				'description' => 'Recommended steps: 1) Scan your site in the CSP site scanner above and allow the services you recognise. 2) Turn on Report-Only below and check the Blocked sources list. 3) Turn Report-Only off once that list is clean. Standard builds the policy from the scan results and the options below and works for most sites. Custom sends exactly the text you write. Off sends no CSP header. Changes apply when you save, and the header is only sent when Enable Security Headers is on.',
 			)
 		);
 
@@ -1496,6 +1499,27 @@ class ADC_Security_Settings {
                     <?php ADC_Security_Firewall_Admin::render_tab(); ?>
                 <?php endif; ?>
             <?php else : ?>
+				<?php
+				// Action panels have their own forms and are not saved by the button below,
+				// so they sit above the settings form and Save stays the last thing on the page.
+				if ( 'hardening' === $active_tab ) {
+					$this->render_csp_scanner_panel();
+					$this->render_csp_reports_panel();
+					?>
+					<details class="adc-tools">
+						<summary><strong><?php esc_html_e( 'Server tools: .htaccess and security keys', 'adc-security' ); ?></strong></summary>
+						<?php
+						$this->render_htaccess_actions();
+						$this->render_keys_actions();
+						?>
+					</details>
+					<?php
+				} elseif ( 'login' === $active_tab ) {
+					$this->render_locked_ips_table();
+				} elseif ( '2fa' === $active_tab && class_exists( 'ADC_Security_2fa' ) ) {
+					ADC_Security_2fa::instance()->render_enrollment_panel( get_current_user_id() );
+				}
+				?>
                 <form action="options.php" method="post">
                     <?php
                     settings_fields( self::OPTION_NAME );
@@ -1515,17 +1539,6 @@ class ADC_Security_Settings {
                      submit_button();
                      ?>
                  </form>
-				<?php if ( 'hardening' === $active_tab ) : ?>
-					<?php $this->render_csp_reports_panel(); ?>
-					<?php $this->render_htaccess_actions(); ?>
-					<?php $this->render_keys_actions(); ?>
-				<?php elseif ( 'login' === $active_tab ) : ?>
-					<?php $this->render_locked_ips_table(); ?>
-				<?php elseif ( '2fa' === $active_tab ) : ?>
-					<?php if ( class_exists( 'ADC_Security_2fa' ) ) : ?>
-						<?php ADC_Security_2fa::instance()->render_enrollment_panel( get_current_user_id() ); ?>
-					<?php endif; ?>
-				<?php endif; ?>
             <?php endif; ?>
 		</div>
 		<?php
@@ -1891,15 +1904,18 @@ class ADC_Security_Settings {
 			<?php endforeach; ?>
 
 			<div class="adc-csp-panel" data-adc-when="csp_mode" data-adc-values="standard">
-				<p class="adc-block-label"><strong>Services you use</strong></p>
-				<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="">
-				<?php foreach ( $catalog as $key => $preset ) : ?>
-					<label class="adc-checkbox-row">
-						<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $presets, true ) ); ?>>
-						<strong><?php echo esc_html( $preset['label'] ); ?></strong>
-						<br><span class="description adc-checkbox-description"><?php echo esc_html( $preset['description'] ); ?></span>
-					</label>
-				<?php endforeach; ?>
+				<details class="adc-csp-presets"<?php echo ! empty( $presets ) ? ' open' : ''; ?>>
+					<summary>Optional: common services that load other scripts after the page loads (Google Tag Manager, Stripe, etc.)</summary>
+					<p class="description">The scanner above finds most services by itself. Use this list only for services that load more scripts later, which a scan cannot see. Tick a service to allow its sources.</p>
+					<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="">
+					<?php foreach ( $catalog as $key => $preset ) : ?>
+						<label class="adc-checkbox-row">
+							<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $presets, true ) ); ?>>
+							<strong><?php echo esc_html( $preset['label'] ); ?></strong>
+							<br><span class="description adc-checkbox-description"><?php echo esc_html( $preset['description'] ); ?></span>
+						</label>
+					<?php endforeach; ?>
+				</details>
 
 				<details class="adc-csp-advanced">
 					<summary>Advanced: sources per directive</summary>
@@ -1943,7 +1959,7 @@ class ADC_Security_Settings {
 				<label class="adc-checkbox-row">
 					<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_report_only]' ); ?>" value="1" <?php checked( $report_only ); ?>>
 					<strong>Report-Only (test without blocking)</strong>
-					<br><span class="description adc-checkbox-description">Browsers report what the policy would block instead of blocking it, and the reports appear under Blocked sources below. Use this on any new policy, then turn it off once the list is clean.</span>
+					<br><span class="description adc-checkbox-description">Browsers report what the policy would block instead of blocking it, and the reports appear under Blocked sources below. Use this after scanning, on any new policy, then turn it off once the list is clean.</span>
 				</label>
 			</div>
 		</fieldset>
@@ -2114,13 +2130,7 @@ class ADC_Security_Settings {
 			if ( ! is_array( $options ) ) {
 				$options = array();
 			}
-			$all   = $this->get_option_array( $options, 'csp_extra_sources' );
-			$extra = $this->get_option_array( $all, $directive );
-			if ( ! in_array( $clean, $extra, true ) ) {
-				$extra[] = $clean;
-			}
-			$all[ $directive ]                   = array_values( $extra );
-			$options['csp_extra_sources']        = $all;
+			list( $options ) = $this->add_csp_extra_source( $options, $directive, $clean );
 			update_option( self::OPTION_NAME, $options );
 
 			add_settings_error( self::OPTION_NAME, 'adc_security_csp_allowed', esc_html( 'Allowed ' . $clean . ' for ' . $directive . '. Reports for it will stop once the new policy is in use.' ), 'updated' );
@@ -2164,6 +2174,469 @@ class ADC_Security_Settings {
 			admin_url( 'admin.php' )
 		) );
 		exit;
+	}
+
+	/**
+	 * Add one source to a directive in csp_extra_sources.
+	 *
+	 * @param array  $options   Plugin options.
+	 * @param string $directive Validated directive name.
+	 * @param string $source    Sanitised source.
+	 * @return array Array of [ updated options, whether the source was new ].
+	 */
+	private function add_csp_extra_source( array $options, $directive, $source ) {
+		$all   = $this->get_option_array( $options, 'csp_extra_sources' );
+		$extra = $this->get_option_array( $all, $directive );
+		if ( in_array( $source, $extra, true ) || count( $extra ) >= 50 ) {
+			return array( $options, false );
+		}
+		$extra[]                      = $source;
+		$all[ $directive ]            = array_values( $extra );
+		$options['csp_extra_sources'] = $all;
+		return array( $options, true );
+	}
+
+	/**
+	 * Plain-language labels for the directives the scanner can report.
+	 *
+	 * @return array<string, string>
+	 */
+	private function get_csp_directive_labels() {
+		return array(
+			'script-src'   => 'Scripts',
+			'style-src'    => 'Stylesheets',
+			'img-src'      => 'Images',
+			'font-src'     => 'Fonts',
+			'connect-src'  => 'Network requests (AJAX, analytics)',
+			'frame-src'    => 'Embedded frames (maps, videos)',
+			'media-src'    => 'Audio and video',
+			'worker-src'   => 'Background workers',
+			'manifest-src' => 'Web app manifests',
+			'default-src'  => 'Everything else (default)',
+			'object-src'   => 'Plugins (object, embed)',
+			'form-action'  => 'Form submissions',
+		);
+	}
+
+	/**
+	 * Server-side guard: plain http origins are refused unless the host is local.
+	 *
+	 * @param string $source Sanitised source.
+	 * @return bool
+	 */
+	private function is_csp_source_acceptable( $source ) {
+		if ( 0 !== stripos( $source, 'http://' ) ) {
+			return true;
+		}
+		$host = strtolower( (string) wp_parse_url( $source, PHP_URL_HOST ) );
+		return in_array( $host, array( 'localhost', '127.0.0.1', '[::1]', '::1' ), true ) || 1 === preg_match( '/\.localhost$/', $host );
+	}
+
+	/**
+	 * Run the site scan (admin-post, nonce and capability checked).
+	 */
+	public function handle_csp_scan() {
+		check_admin_referer( 'adc_security_csp_scan', 'adc_security_csp_scan_nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to perform this action.', 'adc-security' ) );
+		}
+
+		if ( ! class_exists( 'ADC_Security_Csp_Scanner' ) ) {
+			add_settings_error( self::OPTION_NAME, 'adc_security_csp_scan_failed', esc_html__( 'The CSP scanner is not available.', 'adc-security' ), 'error' );
+			$this->redirect_csp_notice();
+		}
+
+		// Extra pages: one per line, same site only, at most three.
+		$raw        = isset( $_POST['adc_csp_scan_extra'] ) && is_string( $_POST['adc_csp_scan_extra'] ) ? wp_unslash( $_POST['adc_csp_scan_extra'] ) : '';
+		$home_host  = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		$extra_urls = array();
+		$rejected   = 0;
+		foreach ( preg_split( '/\r\n|\r|\n/', $raw ) as $line ) {
+			$line = trim( $line );
+			if ( '' === $line ) {
+				continue;
+			}
+			$url  = esc_url_raw( $line, array( 'http', 'https' ) );
+			$host = '' !== $url ? strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) ) : '';
+			if ( '' === $host || $host !== $home_host || count( $extra_urls ) >= 3 ) {
+				$rejected++;
+				continue;
+			}
+			$extra_urls[] = $url;
+		}
+
+		$result = ( new ADC_Security_Csp_Scanner() )->scan( $extra_urls );
+
+		if ( is_wp_error( $result ) ) {
+			add_settings_error( self::OPTION_NAME, 'adc_security_csp_scan_failed', esc_html( $result->get_error_message() ), 'error' );
+		} else {
+			$found    = isset( $result['found'] ) && is_array( $result['found'] ) ? $result['found'] : array();
+			$services = count( array_unique( array_column( $found, 'source' ) ) );
+			$pages    = isset( $result['urls'] ) && is_array( $result['urls'] ) ? count( $result['urls'] ) : 0;
+			$message  = sprintf( 'Scan finished: %d services found on %d pages', $services, $pages );
+			if ( $rejected > 0 ) {
+				$message .= sprintf( '. %d extra address(es) ignored: they must be pages on this site, up to 3.', $rejected );
+			}
+			add_settings_error( self::OPTION_NAME, 'adc_security_csp_scanned', esc_html( $message ), 'updated' );
+		}
+
+		$this->redirect_csp_notice();
+	}
+
+	/**
+	 * Allow the sources ticked in the scan results (admin-post, nonce and capability checked).
+	 */
+	public function handle_csp_apply_scan() {
+		check_admin_referer( 'adc_security_csp_apply_scan', 'adc_security_csp_apply_nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to perform this action.', 'adc-security' ) );
+		}
+
+		$posted     = isset( $_POST['adc_csp_allow'] ) && is_array( $_POST['adc_csp_allow'] ) ? wp_unslash( $_POST['adc_csp_allow'] ) : array();
+		$directives = ADC_Security_Csp_Policy::get_directives();
+		$options    = get_option( self::OPTION_NAME, array() );
+		$options    = is_array( $options ) ? $options : array();
+		$added      = 0;
+		$skipped    = 0;
+		$selected   = 0;
+
+		foreach ( $posted as $directive => $sources ) {
+			$directive = sanitize_text_field( (string) $directive );
+			if ( ! in_array( $directive, $directives, true ) || ! is_array( $sources ) ) {
+				// form-action and object-src are fixed by the plugin and are never accepted here.
+				$skipped += is_array( $sources ) ? count( $sources ) : 1;
+				continue;
+			}
+			foreach ( $sources as $raw ) {
+				$selected++;
+				$clean = is_string( $raw ) ? ADC_Security_Csp_Policy::sanitize_source( sanitize_text_field( $raw ) ) : '';
+				if ( '' === $clean || ! $this->is_csp_source_acceptable( $clean ) ) {
+					$skipped++;
+					continue;
+				}
+				list( $options, $was_added ) = $this->add_csp_extra_source( $options, $directive, $clean );
+				if ( $was_added ) {
+					$added++;
+				}
+			}
+		}
+
+		if ( 0 === $selected ) {
+			add_settings_error( self::OPTION_NAME, 'adc_security_csp_apply_none', esc_html__( 'No sources were selected.', 'adc-security' ), 'error' );
+		} else {
+			if ( $added > 0 ) {
+				update_option( self::OPTION_NAME, $options );
+			}
+			$message = $added > 0 ? sprintf( '%d sources added', $added ) : 'No new sources were added.';
+			if ( $skipped > 0 ) {
+				$message .= sprintf( ' %d skipped: not valid, not allowed on this site, or fixed by the plugin.', $skipped );
+			}
+			add_settings_error( self::OPTION_NAME, 'adc_security_csp_applied', esc_html( $message ), 'updated' );
+		}
+
+		$this->redirect_csp_notice();
+	}
+
+	/**
+	 * Forget the last scan result (admin-post, nonce and capability checked).
+	 */
+	public function handle_csp_clear_scan() {
+		check_admin_referer( 'adc_security_csp_clear_scan', 'adc_security_csp_clear_scan_nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to perform this action.', 'adc-security' ) );
+		}
+
+		if ( class_exists( 'ADC_Security_Csp_Scanner' ) ) {
+			ADC_Security_Csp_Scanner::clear();
+		}
+
+		add_settings_error( self::OPTION_NAME, 'adc_security_csp_scan_cleared', esc_html__( 'Scan results cleared.', 'adc-security' ), 'updated' );
+		$this->redirect_csp_notice();
+	}
+
+	/**
+	 * Render the CSP site scanner: a scan form, then the results grouped by directive.
+	 *
+	 * Rendered outside the options form because its buttons post on their own.
+	 */
+	private function render_csp_scanner_panel() {
+		$options  = get_option( self::OPTION_NAME, array() );
+		$options  = is_array( $options ) ? $options : array();
+		$mode     = ADC_Security_Hardening::get_csp_mode( $options );
+		$extra    = $this->get_option_array( $options, 'csp_extra_sources' );
+		$ready    = class_exists( 'ADC_Security_Csp_Scanner' );
+		$last     = $ready ? ADC_Security_Csp_Scanner::get_last_scan() : array();
+		$has_scan = ! empty( $last['time'] );
+		$action   = esc_url( admin_url( 'admin-post.php' ) );
+		$urls     = $has_scan && ! empty( $last['urls'] ) && is_array( $last['urls'] ) ? $last['urls'] : array();
+		$errors   = $has_scan && ! empty( $last['errors'] ) && is_array( $last['errors'] ) ? $last['errors'] : array();
+		$existing = $has_scan && isset( $last['existing_csp'] ) && is_string( $last['existing_csp'] ) ? trim( $last['existing_csp'] ) : '';
+		$found    = $has_scan && ! empty( $last['found'] ) && is_array( $last['found'] ) ? ADC_Security_Csp_Scanner::mark_allowed( $last['found'], $extra ) : array();
+		$hints    = ! empty( $found ) ? ADC_Security_Csp_Scanner::companion_hints( $found ) : array();
+		$home_host = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+		$labels   = $this->get_csp_directive_labels();
+		$fixed    = array( 'form-action', 'object-src' );
+		$index    = 0;
+
+		$groups = array();
+		foreach ( $found as $row ) {
+			$groups[ $row['directive'] ][] = $row;
+		}
+		$ordered = array();
+		foreach ( array_keys( $labels ) as $directive ) {
+			if ( isset( $groups[ $directive ] ) ) {
+				$ordered[ $directive ] = $groups[ $directive ];
+			}
+		}
+		foreach ( $groups as $directive => $rows ) {
+			if ( ! isset( $ordered[ $directive ] ) ) {
+				$ordered[ $directive ] = $rows;
+			}
+		}
+		?>
+		<div class="adc-admin-panel adc-csp-scanner" id="adc-csp-scanner">
+			<h2 class="adc-no-top-margin" id="adc-csp-scanner-title">CSP site scanner</h2>
+			<p class="description">Scans the public pages of your site as a visitor and lists every outside service they load, so you can choose which ones your Content-Security-Policy should allow. It cannot see resources that a script loads later (for example Google Tag Manager loading other scripts) - use Report-Only mode and the Blocked sources list below for those.</p>
+
+			<form method="post" action="<?php echo $action; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-csp-scan-form">
+				<?php wp_nonce_field( 'adc_security_csp_scan', 'adc_security_csp_scan_nonce' ); ?>
+				<input type="hidden" name="action" value="adc_security_csp_scan">
+				<p>
+					<label class="adc-block-label" for="adc-csp-scan-extra">Extra page URL to include (same site only)</label>
+					<textarea id="adc-csp-scan-extra" name="adc_csp_scan_extra" rows="3" class="large-text code" placeholder="<?php echo esc_attr( home_url( '/contact/' ) ); ?>"></textarea>
+					<span class="description">One address per line, up to 3. The scanner also picks a set of public pages automatically.</span>
+				</p>
+				<p><button type="submit" class="button button-primary" <?php disabled( ! $ready ); ?>>Scan my site</button></p>
+			</form>
+
+			<?php if ( ! $has_scan ) : ?>
+				<p>No scan has run yet. Scan your site to see which outside services it loads.</p>
+			<?php else : ?>
+				<div class="adc-csp-scan-results" aria-live="polite">
+					<p><strong>Your site:</strong> <code><?php echo esc_html( $home_host ); ?></code> <span class="description">Hosts on this domain count as your own. Everything else is an outside service.</span></p>
+					<p><strong>Last scan:</strong> <time datetime="<?php echo esc_attr( gmdate( 'c', (int) $last['time'] ) ); ?>"><?php echo esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $last['time'] ) ); ?></time></p>
+
+					<details class="adc-csp-pages">
+						<summary>Pages scanned (<?php echo esc_html( number_format_i18n( count( $urls ) ) ); ?>)</summary>
+						<ul>
+							<?php foreach ( $urls as $url ) : ?>
+								<li><code><?php echo esc_html( $url ); ?></code></li>
+							<?php endforeach; ?>
+						</ul>
+					</details>
+
+					<?php if ( ! empty( $errors ) ) : ?>
+						<details class="adc-csp-errors">
+							<summary><?php echo esc_html( sprintf( _n( '%d page could not be scanned', '%d pages could not be scanned', count( $errors ), 'adc-security' ), count( $errors ) ) ); ?></summary>
+							<ul>
+								<?php foreach ( $errors as $url => $message ) : ?>
+									<li><code><?php echo esc_html( (string) $url ); ?></code>: <?php echo esc_html( (string) $message ); ?></li>
+								<?php endforeach; ?>
+							</ul>
+						</details>
+					<?php endif; ?>
+
+					<?php if ( '' !== $existing ) : ?>
+						<div class="adc-csp-existing notice notice-info inline">
+							<p>This site already sends a Content-Security-Policy header from a server setting, another plugin or your theme. Browsers apply every policy they receive, so the scan may not show the whole picture.</p>
+							<details>
+								<summary>Show the existing header</summary>
+								<pre class="adc-csp-preview"><?php echo esc_html( $existing ); ?></pre>
+							</details>
+						</div>
+					<?php endif; ?>
+
+					<?php if ( empty( $found ) ) : ?>
+						<p>No outside services were found on the scanned pages.</p>
+					<?php else : ?>
+						<form method="post" action="<?php echo $action; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-csp-apply-form" id="adc-csp-apply-form">
+							<?php wp_nonce_field( 'adc_security_csp_apply_scan', 'adc_security_csp_apply_nonce' ); ?>
+							<input type="hidden" name="action" value="adc_security_csp_apply_scan">
+
+							<?php if ( 'standard' === $mode ) : ?>
+								<p class="description">Allowed sources are saved straight away and used in the policy while Content-Security-Policy mode is Standard.</p>
+							<?php else : ?>
+								<div class="adc-csp-mode-note">
+									<p><strong>These sources are not used right now.</strong> Your Content-Security-Policy mode is <strong><?php echo esc_html( ucfirst( $mode ) ); ?></strong>. Allowed sources only change the policy when the mode is Standard. Choose Standard under Content-Security-Policy below and save to use them.</p>
+								</div>
+							<?php endif; ?>
+
+							<p class="adc-csp-select-row" hidden>
+								<button type="button" class="button-link adc-csp-select" data-adc-select="all">Select all</button>
+								&middot;
+								<button type="button" class="button-link adc-csp-select" data-adc-select="none">Select none</button>
+							</p>
+
+							<?php foreach ( $ordered as $directive => $rows ) :
+								$dir_id = 'adc-csp-dir-' . sanitize_html_class( $directive );
+								$label  = isset( $labels[ $directive ] ) ? $labels[ $directive ] : $directive;
+								if ( in_array( $directive, $fixed, true ) ) :
+									?>
+									<h3 id="<?php echo esc_attr( $dir_id ); ?>"><?php echo esc_html( $label ); ?> <code><?php echo esc_html( $directive ); ?></code></h3>
+									<p class="description">Set by the plugin and not changed here.</p>
+									<?php
+									continue;
+								endif;
+
+								$third = array();
+								$first = array();
+								foreach ( $rows as $row ) {
+									if ( isset( $row['party'] ) && 'first_sub' === $row['party'] ) {
+										$first[] = $row;
+									} else {
+										$third[] = $row;
+									}
+								}
+								?>
+								<h3 id="<?php echo esc_attr( $dir_id ); ?>"><?php echo esc_html( $label ); ?> <code><?php echo esc_html( $directive ); ?></code></h3>
+								<?php if ( ! empty( $third ) ) : ?>
+									<?php $this->render_csp_scan_table( $third, $directive, __( 'Outside services', 'adc-security' ), $index, $dir_id . '-third' ); ?>
+								<?php endif; ?>
+								<?php if ( ! empty( $first ) ) : ?>
+									<h4 id="<?php echo esc_attr( $dir_id . '-first' ); ?>">Your own subdomains</h4>
+									<p class="description">Hosts on your own domain. Allow the exact host shown, never a wildcard, and only if you recognise it.</p>
+									<?php $this->render_csp_scan_table( $first, $directive, __( 'Your own subdomains', 'adc-security' ), $index, $dir_id . '-first-table' ); ?>
+								<?php endif; ?>
+							<?php endforeach; ?>
+
+							<?php if ( ! empty( $hints ) ) : ?>
+								<div class="adc-csp-companions">
+									<h3>Services detected on your site</h3>
+									<?php foreach ( $hints as $hint ) :
+										$missing = isset( $hint['missing'] ) && is_array( $hint['missing'] ) ? $hint['missing'] : array();
+										$open    = array();
+										foreach ( $missing as $dir => $origins ) {
+											$current = $this->get_option_array( $extra, $dir );
+											foreach ( (array) $origins as $origin ) {
+												if ( ! in_array( $origin, $current, true ) ) {
+													$open[ $dir ][] = $origin;
+												}
+											}
+										}
+										if ( empty( $open ) ) {
+											continue;
+										}
+										?>
+										<div class="adc-csp-companion">
+											<h4><?php echo esc_html( isset( $hint['label'] ) ? $hint['label'] : '' ); ?></h4>
+											<?php if ( ! empty( $hint['detected'] ) && is_array( $hint['detected'] ) ) : ?>
+												<p class="description">Detected: <?php echo esc_html( implode( ', ', $hint['detected'] ) ); ?></p>
+											<?php endif; ?>
+											<p class="description">Often needed as well, but loaded later by scripts and therefore not visible in the page HTML.</p>
+											<?php foreach ( $open as $dir => $origins ) : ?>
+												<?php foreach ( $origins as $origin ) : $index++; ?>
+													<label class="adc-checkbox-row" for="<?php echo esc_attr( 'adc-csp-companion-' . $index ); ?>">
+														<input type="checkbox" id="<?php echo esc_attr( 'adc-csp-companion-' . $index ); ?>" name="adc_csp_allow[<?php echo esc_attr( $dir ); ?>][]" value="<?php echo esc_attr( $origin ); ?>">
+														<code><?php echo esc_html( $origin ); ?></code> <span class="description">for <?php echo esc_html( $dir ); ?></span>
+													</label>
+												<?php endforeach; ?>
+											<?php endforeach; ?>
+										</div>
+									<?php endforeach; ?>
+								</div>
+							<?php endif; ?>
+
+							<p class="description">Good practice: allow only the services you recognise and need, use Report-Only first to see what breaks, and never add a service you do not use. Each source you allow widens what scripts on your site may load.</p>
+							<p><button type="submit" class="button button-primary">Allow selected</button></p>
+						</form>
+					<?php endif; ?>
+				</div>
+
+				<form method="post" action="<?php echo $action; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-mb-10">
+					<?php wp_nonce_field( 'adc_security_csp_clear_scan', 'adc_security_csp_clear_scan_nonce' ); ?>
+					<input type="hidden" name="action" value="adc_security_csp_clear_scan">
+					<button type="submit" class="button button-link-delete">Clear scan results</button>
+				</form>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render one table of scanned sources for a directive.
+	 *
+	 * @param array  $rows    Scan rows for this directive and party.
+	 * @param string $directive Directive name.
+	 * @param string $caption   Screen-reader caption.
+	 * @param int    $index     Running checkbox counter (by reference).
+	 * @param string $table_id  Id used for the table's accessible name.
+	 */
+	private function render_csp_scan_table( array $rows, $directive, $caption, &$index, $table_id ) {
+		?>
+		<table class="widefat striped adc-status-table adc-csp-table" aria-labelledby="<?php echo esc_attr( $table_id ); ?>">
+			<caption class="screen-reader-text" id="<?php echo esc_attr( $table_id ); ?>"><?php echo esc_html( $caption ); ?></caption>
+			<thead>
+				<tr>
+					<th scope="col"><span class="screen-reader-text">Allow</span></th>
+					<th scope="col">Source</th>
+					<th scope="col">Found in</th>
+					<th scope="col">Seen on</th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $rows as $row ) :
+					$index++;
+					$source     = (string) $row['source'];
+					$allowed    = ! empty( $row['allowed'] );
+					$notes      = isset( $row['notes'] ) && is_array( $row['notes'] ) ? $row['notes'] : array();
+					$insecure   = in_array( 'insecure_http', $notes, true );
+					$ip_host    = in_array( 'ip_host', $notes, true );
+					$inferred   = ! empty( $row['inferred'] ) || in_array( 'inferred', $notes, true );
+					$pages      = isset( $row['pages'] ) && is_array( $row['pages'] ) ? $row['pages'] : array();
+					$count      = isset( $row['count'] ) ? (int) $row['count'] : count( $pages );
+					$party_own  = isset( $row['party'] ) && 'first_sub' === $row['party'];
+					$recommend  = $party_own && $count >= 2 && ! $allowed && ! $insecure;
+					$cb_id      = 'adc-csp-src-' . $index;
+					?>
+					<tr>
+						<td>
+							<input type="checkbox" id="<?php echo esc_attr( $cb_id ); ?>" name="adc_csp_allow[<?php echo esc_attr( $directive ); ?>][]" value="<?php echo esc_attr( $source ); ?>" <?php checked( $allowed ); ?> <?php disabled( $allowed || $insecure ); ?>>
+							<label for="<?php echo esc_attr( $cb_id ); ?>" class="screen-reader-text">Allow <?php echo esc_html( $source ); ?> for <?php echo esc_html( $directive ); ?></label>
+						</td>
+						<td>
+							<code><?php echo esc_html( $source ); ?></code>
+							<?php if ( $allowed ) : ?>
+								<br><span class="adc-csp-allowed">Already allowed</span>
+							<?php endif; ?>
+							<?php if ( $insecure ) : ?>
+								<br><span class="adc-csp-badge adc-csp-badge-warn">Loaded over http - fix the page or allow only https</span>
+							<?php endif; ?>
+							<?php if ( $ip_host ) : ?>
+								<br><span class="adc-csp-badge adc-csp-badge-caution">Caution: loaded from an IP address</span>
+							<?php endif; ?>
+							<?php if ( $recommend ) : ?>
+								<br><span class="adc-csp-badge adc-csp-badge-ok">Recommended: found on several pages</span>
+							<?php endif; ?>
+						</td>
+						<td>
+							<?php if ( isset( $row['tag'] ) && '' !== (string) $row['tag'] ) : ?>
+								<code><?php echo esc_html( (string) $row['tag'] ); ?></code>
+							<?php endif; ?>
+							<?php if ( $inferred ) : ?>
+								<br><span class="adc-csp-badge">guessed from inline script</span>
+							<?php endif; ?>
+						</td>
+						<td>
+							<?php echo esc_html( sprintf( _n( '%d page', '%d pages', $count, 'adc-security' ), $count ) ); ?>
+							<?php if ( ! empty( $pages ) ) : ?>
+								<details class="adc-csp-pages-seen">
+									<summary>Show pages</summary>
+									<ul>
+										<?php foreach ( $pages as $page ) : ?>
+											<li><code><?php echo esc_html( (string) $page ); ?></code></li>
+										<?php endforeach; ?>
+									</ul>
+								</details>
+							<?php endif; ?>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
 	}
 
 	/**

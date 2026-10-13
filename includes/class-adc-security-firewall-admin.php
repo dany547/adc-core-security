@@ -147,6 +147,70 @@ class ADC_Security_Firewall_Admin {
 			}
 		}
 		?>
+		<div class="adc-admin-panel adc-fw adc-fw-matches">
+			<h2 class="adc-no-top-margin">Recent matches</h2>
+			<p class="description">The last 20 requests that matched a rule. If a match is legitimate for your site, you can allow that pattern; it will no longer be blocked.</p>
+			<?php if ( empty( $matches ) ) : ?>
+				<p>No matches yet. This is normal on a healthy site.</p>
+			<?php else : ?>
+				<div class="adc-fw-table-wrap">
+					<table class="widefat striped adc-fw-table">
+						<thead>
+							<tr>
+								<th scope="col">Time</th>
+								<th scope="col">Rule</th>
+								<th scope="col">Mode</th>
+								<th scope="col">IP address</th>
+								<th scope="col">Where</th>
+								<th scope="col">Detail</th>
+								<th scope="col"><span class="screen-reader-text">Action</span></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ( $matches as $row ) : ?>
+								<?php
+								$fingerprint = isset( $row['fingerprint'] ) && is_string( $row['fingerprint'] ) ? $row['fingerprint'] : '';
+								$rid         = isset( $row['rule_id'] ) ? (string) $row['rule_id'] : '';
+								$rtitle      = isset( $rules[ $rid ]['title'] ) ? $rules[ $rid ]['title'] : $rid;
+								$time_raw    = isset( $row['time'] ) ? $row['time'] : '';
+								$time_text   = is_numeric( $time_raw ) ? wp_date( 'Y-m-d H:i', (int) $time_raw ) : (string) $time_raw;
+								$mode_text   = isset( $row['mode'] ) && 'enforce' === $row['mode'] ? 'Blocked' : 'Logged';
+								?>
+								<tr>
+									<td><?php echo esc_html( $time_text ); ?></td>
+									<td><?php echo esc_html( $rtitle ); ?></td>
+									<td><?php echo esc_html( $mode_text ); ?></td>
+									<td><code><?php echo esc_html( isset( $row['ip'] ) ? (string) $row['ip'] : '' ); ?></code></td>
+									<td><code><?php echo esc_html( isset( $row['target'] ) ? (string) $row['target'] : '' ); ?></code></td>
+									<td><?php echo esc_html( isset( $row['detail'] ) ? (string) $row['detail'] : '' ); ?></td>
+									<td>
+										<?php if ( preg_match( '/^[a-f0-9]{16}$/', $fingerprint ) ) : ?>
+											<form method="post" action="<?php echo $action_url; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-inline">
+												<?php wp_nonce_field( 'adc_security_firewall_allow', 'adc_security_firewall_allow_nonce' ); ?>
+												<input type="hidden" name="action" value="adc_security_firewall_allow">
+												<input type="hidden" name="fingerprint" value="<?php echo esc_attr( $fingerprint ); ?>">
+												<button type="submit" class="button button-secondary">Allow this pattern</button>
+											</form>
+										<?php endif; ?>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				</div>
+			<?php endif; ?>
+		</div>
+
+		<div class="adc-admin-panel adc-fw">
+			<details class="adc-fw-details">
+				<summary><strong>Safety features</strong></summary>
+				<ul class="adc-fw-list">
+					<li><strong>Emergency off switch:</strong> add <code>define( 'ADC_SECURITY_DISABLE_FIREWALL', true );</code> to wp-config.php to turn the firewall off immediately, even if you cannot reach this screen.</li>
+					<li><strong>Automatic safe mode:</strong> if a rule starts stopping a large number of requests in a short time, the firewall switches itself to Log only and tells you here.</li>
+					<li><strong>Never blocks trusted tools:</strong> WP-CLI, scheduled tasks (cron), the block editor and logged-in users are never blocked by rules that only target logged-out visitors.</li>
+				</ul>
+			</details>
+		</div>
 		<div class="adc-admin-panel adc-fw">
 			<h2 class="adc-no-top-margin">Firewall rules</h2>
 			<p>These rules block specific, known attacks on WordPress core before the site's own code runs. Each rule matches only attack-shaped requests, so normal visitors, editors and admins are not affected.</p>
@@ -247,70 +311,6 @@ class ADC_Security_Firewall_Admin {
 			</form>
 		</div>
 
-		<div class="adc-admin-panel adc-fw adc-fw-matches">
-			<h2 class="adc-no-top-margin">Recent matches</h2>
-			<p class="description">The last 20 requests that matched a rule. If a match is legitimate for your site, you can allow that pattern; it will no longer be blocked.</p>
-			<?php if ( empty( $matches ) ) : ?>
-				<p>No matches yet. This is normal on a healthy site.</p>
-			<?php else : ?>
-				<div class="adc-fw-table-wrap">
-					<table class="widefat striped adc-fw-table">
-						<thead>
-							<tr>
-								<th scope="col">Time</th>
-								<th scope="col">Rule</th>
-								<th scope="col">Mode</th>
-								<th scope="col">IP address</th>
-								<th scope="col">Where</th>
-								<th scope="col">Detail</th>
-								<th scope="col"><span class="screen-reader-text">Action</span></th>
-							</tr>
-						</thead>
-						<tbody>
-							<?php foreach ( $matches as $row ) : ?>
-								<?php
-								$fingerprint = isset( $row['fingerprint'] ) && is_string( $row['fingerprint'] ) ? $row['fingerprint'] : '';
-								$rid         = isset( $row['rule_id'] ) ? (string) $row['rule_id'] : '';
-								$rtitle      = isset( $rules[ $rid ]['title'] ) ? $rules[ $rid ]['title'] : $rid;
-								$time_raw    = isset( $row['time'] ) ? $row['time'] : '';
-								$time_text   = is_numeric( $time_raw ) ? wp_date( 'Y-m-d H:i', (int) $time_raw ) : (string) $time_raw;
-								$mode_text   = isset( $row['mode'] ) && 'enforce' === $row['mode'] ? 'Blocked' : 'Logged';
-								?>
-								<tr>
-									<td><?php echo esc_html( $time_text ); ?></td>
-									<td><?php echo esc_html( $rtitle ); ?></td>
-									<td><?php echo esc_html( $mode_text ); ?></td>
-									<td><code><?php echo esc_html( isset( $row['ip'] ) ? (string) $row['ip'] : '' ); ?></code></td>
-									<td><code><?php echo esc_html( isset( $row['target'] ) ? (string) $row['target'] : '' ); ?></code></td>
-									<td><?php echo esc_html( isset( $row['detail'] ) ? (string) $row['detail'] : '' ); ?></td>
-									<td>
-										<?php if ( preg_match( '/^[a-f0-9]{16}$/', $fingerprint ) ) : ?>
-											<form method="post" action="<?php echo $action_url; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-inline">
-												<?php wp_nonce_field( 'adc_security_firewall_allow', 'adc_security_firewall_allow_nonce' ); ?>
-												<input type="hidden" name="action" value="adc_security_firewall_allow">
-												<input type="hidden" name="fingerprint" value="<?php echo esc_attr( $fingerprint ); ?>">
-												<button type="submit" class="button button-secondary">Allow this pattern</button>
-											</form>
-										<?php endif; ?>
-									</td>
-								</tr>
-							<?php endforeach; ?>
-						</tbody>
-					</table>
-				</div>
-			<?php endif; ?>
-		</div>
-
-		<div class="adc-admin-panel adc-fw">
-			<details class="adc-fw-details">
-				<summary><strong>Safety features</strong></summary>
-				<ul class="adc-fw-list">
-					<li><strong>Emergency off switch:</strong> add <code>define( 'ADC_SECURITY_DISABLE_FIREWALL', true );</code> to wp-config.php to turn the firewall off immediately, even if you cannot reach this screen.</li>
-					<li><strong>Automatic safe mode:</strong> if a rule starts stopping a large number of requests in a short time, the firewall switches itself to Log only and tells you here.</li>
-					<li><strong>Never blocks trusted tools:</strong> WP-CLI, scheduled tasks (cron), the block editor and logged-in users are never blocked by rules that only target logged-out visitors.</li>
-				</ul>
-			</details>
-		</div>
 		<?php
 	}
 

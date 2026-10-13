@@ -85,6 +85,7 @@ jobs:
             "includes/class-adc-security-keys.php"
             "includes/class-adc-security-csp.php"
             "includes/class-adc-security-csp-reports.php"
+            "includes/class-adc-security-csp-scanner.php"
             "includes/class-adc-security-captcha.php"
             "includes/class-adc-security-logger.php"
             "includes/class-adc-security-updater.php"
@@ -134,6 +135,9 @@ jobs:
 
       - name: Test CSP reports
         run: php tests/test-csp-reports.php
+
+      - name: Test CSP scanner
+        run: php tests/test-csp-scanner.php
 
       - name: Test security score
         run: php tests/test-security-score.php

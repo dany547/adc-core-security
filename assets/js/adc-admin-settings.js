@@ -164,6 +164,18 @@ jQuery(document).ready(function ($) {
         $('.adc-csp').on('change input', 'input, textarea, select', updateConditionalPanels);
     }
 
+    // --- CSP site scanner: select all / none (progressive enhancement) ---
+    // The helper row is hidden in the markup and only shown when this script runs.
+    var $scanForm = $('#adc-csp-apply-form');
+    if ($scanForm.length) {
+        $scanForm.find('.adc-csp-select-row').prop('hidden', false);
+        $scanForm.on('click', '[data-adc-select]', function () {
+            var selectAll = $(this).attr('data-adc-select') === 'all';
+            // Disabled boxes (already allowed, or loaded over http) are never changed.
+            $scanForm.find('input[type="checkbox"]:not(:disabled)').prop('checked', selectAll);
+        });
+    }
+
     // --- Firewall: confirm before switching from Log only to Block ---
     $(document).on('submit', 'form[data-adc-confirm-block]', function (event) {
         var $form = $(this);
