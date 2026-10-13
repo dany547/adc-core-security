@@ -41,4 +41,35 @@ if ( abs( $tokens - 0.5 ) > 0.0001 ) {
 	$fail( "Expected 0.5 tokens after half a refill interval, got $tokens." );
 }
 
+// Bucket step: a new bucket starts full and one token is taken.
+$step = ADC_Security_Rate_Limit::step( null, 1000.0, 20, 3 );
+if ( ! $step['allowed'] || abs( $step['bucket']['tokens'] - 19.0 ) > 0.0001 ) {
+	$fail( 'Expected a new bucket to allow one request and keep 19 tokens.' );
+}
+
+// Less than one token available: refused, and the stored tokens are kept.
+$step = ADC_Security_Rate_Limit::step( array( 'tokens' => 0.5, 'updated' => 1000.0 ), 1000.0, 20, 3 );
+if ( $step['allowed'] || abs( $step['bucket']['tokens'] - 0.5 ) > 0.0001 ) {
+	$fail( 'Expected an empty bucket to refuse a request without taking a token.' );
+}
+
+// One refill interval later the bucket allows one request again.
+$step = ADC_Security_Rate_Limit::step( array( 'tokens' => 0.0, 'updated' => 1000.0 ), 1003.0, 20, 3 );
+if ( ! $step['allowed'] || abs( $step['bucket']['tokens'] - 0.0 ) > 0.0001 ) {
+	$fail( 'Expected one token after one refill interval.' );
+}
+
+// A burst of 20 is allowed from a new bucket, the 21st is refused.
+$bucket = null;
+for ( $i = 0; $i < 20; $i++ ) {
+	$step   = ADC_Security_Rate_Limit::step( $bucket, 1000.0, 20, 3 );
+	$bucket = $step['bucket'];
+	if ( ! $step['allowed'] ) {
+		$fail( 'Expected request ' . ( $i + 1 ) . ' of the burst to be allowed.' );
+	}
+}
+if ( ADC_Security_Rate_Limit::step( $bucket, 1000.0, 20, 3 )['allowed'] ) {
+	$fail( 'Expected the 21st request in a burst to be refused.' );
+}
+
 fwrite( STDOUT, "Rate limit tests passed.\n" );

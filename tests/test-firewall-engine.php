@@ -108,6 +108,49 @@ $expect( 'block', array( 'rule_id' => $author, 'logged_in' => false, 'can_edit' 
 $expect( 'allow', array( 'rule_id' => $author, 'logged_in' => true, 'can_edit' => true, 'is_cron' => true ), 'Editor on cron request' );
 
 // -------------------------------------------------------------------------
+// Generic rules (scanner probes and search limit)
+// -------------------------------------------------------------------------
+
+$probe  = 'block_vulnerability_probes';
+$search = 'limit_anonymous_search';
+
+$generic_on = array(
+	'enabled' => 1,
+	'mode'    => 'enforce',
+	'rules'   => array(
+		$probe  => 'on',
+		$search => 'on',
+	),
+);
+
+foreach ( array( $probe, $search ) as $generic_id ) {
+	// Anonymous requests are blocked on any WordPress version, never treated as not needed.
+	$expect( 'block', array( 'rule_id' => $generic_id, 'wp_version' => '7.2' ), 'Anonymous request on ' . $generic_id, $generic_on );
+	$expect( 'block', array( 'rule_id' => $generic_id, 'wp_version' => '' ), 'Unknown WordPress version on ' . $generic_id, $generic_on );
+	$expect( 'monitor', array( 'rule_id' => $generic_id ), 'Monitor mode on ' . $generic_id, array( 'enabled' => 1, 'mode' => 'monitor', 'rules' => array( $generic_id => 'on' ) ) );
+	$expect( 'allow', array( 'rule_id' => $generic_id ), 'Firewall off on ' . $generic_id, array( 'enabled' => 0, 'mode' => 'enforce', 'rules' => array( $generic_id => 'on' ) ) );
+	$expect( 'allow', array( 'rule_id' => $generic_id ), 'Rule switched off on ' . $generic_id, array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $generic_id => 'off' ) ) );
+
+	// An unreliable client IP means log only, whatever the mode.
+	$expect( 'monitor', array( 'rule_id' => $generic_id ), 'Unreliable IP on ' . $generic_id, array_merge( $generic_on, array( 'ip_unreliable' => true ) ) );
+
+	// The generic rules only apply to anonymous requests.
+	$expect( 'allow', array( 'rule_id' => $generic_id, 'logged_in' => true ), 'Logged-in user on ' . $generic_id, $generic_on );
+	$expect( 'allow', array( 'rule_id' => $generic_id, 'logged_in' => true, 'can_edit' => true ), 'Logged-in editor on ' . $generic_id, $generic_on );
+
+	// Exceptions still win.
+	$expect( 'allow', array( 'rule_id' => $generic_id, 'is_cli' => true ), 'WP-CLI on ' . $generic_id, $generic_on );
+	$expect( 'allow', array( 'rule_id' => $generic_id, 'is_cron' => true ), 'Cron on ' . $generic_id, $generic_on );
+	$expect( 'allow', array( 'rule_id' => $generic_id, 'ip_allowlisted' => true ), 'Allowlisted IP on ' . $generic_id, $generic_on );
+	$expect( 'allow', array( 'rule_id' => $generic_id, 'kill_switch' => true ), 'Kill switch on ' . $generic_id, $generic_on );
+	$expect( 'allow', array( 'rule_id' => $generic_id, 'matched' => false ), 'Unmatched request on ' . $generic_id, $generic_on );
+}
+
+// CVE decisions are unchanged when generic rules are switched on.
+$expect( 'block', array(), 'Anonymous batch request with generic rules on', array_merge( $enforce, array( 'rules' => array_merge( $enforce['rules'], array( $probe => 'on' ) ) ) ) );
+$expect( 'allow', array( 'wp_version' => '6.9.5' ), 'Fixed CVE with generic rules on', array_merge( $enforce, array( 'rules' => array_merge( $enforce['rules'], array( $probe => 'on' ) ) ) ) );
+
+// -------------------------------------------------------------------------
 // Failure handling
 // -------------------------------------------------------------------------
 

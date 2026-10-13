@@ -177,4 +177,80 @@ $assert( '/' === $M::rest_route_from_request( array(), '/wp-json' ), 'Bare /wp-j
 $assert( '' === $M::rest_route_from_request( array(), '/about-us' ), 'A non-REST path must return an empty route.' );
 $assert( '' === $M::rest_route_from_request( array( 'rest_route' => '' ), '' ), 'Empty inputs must return an empty route.' );
 
+// -------------------------------------------------------------------------
+// Probe paths (block_vulnerability_probes): probes must match, pages must not.
+// -------------------------------------------------------------------------
+
+$probes = array(
+	'/.env',
+	'/.env.local',
+	'/.env.production',
+	'/.git/config',
+	'/.git/HEAD',
+	'/.svn/entries',
+	'/.hg/hgrc',
+	'/.aws/credentials',
+	'/.ssh/id_rsa',
+	'/.DS_Store',
+	'/phpmyadmin',
+	'/PHPMYADMIN/',
+	'/pma/index.php',
+	'/adminer.php',
+	'/vendor/phpunit/phpunit/phpunit',
+	'/wp-config.php.bak',
+	'/wp-config.php.old',
+	'/wp-config.php.save',
+	'/wp-content/debug.log',
+	'/backup.sql',
+	'/dump.sql',
+	'/database.sql',
+	'/id_rsa',
+	'/xmlrpc.php.bak',
+	'/%2e%65nv',
+	'/%252e%2565nv',
+	'/%2E%65%6E%76',
+	'/.ENV?x=1',
+	'//.env',
+	'/.git/config?foo=bar',
+	'/.git',
+);
+
+foreach ( $probes as $path ) {
+	$assert( $M::is_probe_path( $path ), 'Probe path not matched: ' . $path . '.' );
+}
+
+$not_probes = array(
+	'/blog/env-variables/',
+	'/wp-content/uploads/2024/05/photo.jpg',
+	'/shop/',
+	'/contact/',
+	'/wp-content/plugins/x/style.css',
+	'/feed/',
+	'/sitemap.xml',
+	'/robots.txt',
+	'/favicon.ico',
+	'/.well-known/acme-challenge/token',
+	'/.well-known/security.txt',
+	'/.well-known/',
+	'/.environment',
+	'/.gitignore',
+	'/.git-notes/',
+	'/pmastuff/',
+	'/adminers/',
+	'/wp-config.php',
+	'/wp-content/debug-info/',
+	'/id_rsa_notes/',
+	'',
+	'/',
+);
+
+foreach ( $not_probes as $path ) {
+	$assert( ! $M::is_probe_path( $path ), 'Ordinary path matched as a probe: ' . $path . '.' );
+}
+
+// Query strings and fragments are ignored; the normalised value is lower-case and decoded.
+$assert( '/.env' === $M::normalize_probe_path( '/%2E%65NV?x=1#top' ), 'Probe path normalisation must decode, lower-case and drop the query.' );
+$assert( '/shop/' === $M::normalize_probe_path( 'shop/' ), 'A relative path must gain a leading slash.' );
+$assert( '' === $M::normalize_probe_path( '' ), 'An empty path must normalise to an empty string.' );
+
 echo 'Firewall corpus tests passed.' . PHP_EOL;

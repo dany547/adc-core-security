@@ -50,4 +50,26 @@ foreach ( $xff_cases as list( $header, $expected ) ) {
 	}
 }
 
+// is_client_ip_reliable() decision: arguments are ($server, $configured header, $trusted proxies).
+$reliable_cases = array(
+	// CF header arrives but no trusted proxy header is configured.
+	array( 'CF header without setting', array( 'REMOTE_ADDR' => '203.0.113.7', 'HTTP_CF_CONNECTING_IP' => '198.51.100.9' ), '', array( '203.0.113.7' ), false ),
+	// Header configured, request really comes from a trusted proxy.
+	array( 'header plus matching proxy', array( 'REMOTE_ADDR' => '203.0.113.7', 'HTTP_CF_CONNECTING_IP' => '198.51.100.9' ), 'CF-Connecting-IP', array( '203.0.113.7' ), true ),
+	array( 'header plus proxy CIDR', array( 'REMOTE_ADDR' => '10.1.2.3', 'HTTP_X_FORWARDED_FOR' => '198.51.100.9' ), 'X-Forwarded-For', array( '10.0.0.0/8' ), true ),
+	// No forwarding headers at all.
+	array( 'no headers', array( 'REMOTE_ADDR' => '198.51.100.9' ), '', array(), true ),
+	array( 'no headers with setting', array( 'REMOTE_ADDR' => '198.51.100.9' ), 'CF-Connecting-IP', array( '203.0.113.7' ), true ),
+	// Spoofed header from a direct visitor while the setting is on.
+	array( 'spoof from non-proxy', array( 'REMOTE_ADDR' => '198.51.100.9', 'HTTP_X_REAL_IP' => '1.2.3.4' ), 'X-Real-IP', array( '203.0.113.7' ), false ),
+	array( 'spoof with empty proxy list', array( 'REMOTE_ADDR' => '198.51.100.9', 'HTTP_TRUE_CLIENT_IP' => '1.2.3.4' ), 'CF-Connecting-IP', array(), false ),
+	array( 'invalid REMOTE_ADDR', array( 'REMOTE_ADDR' => 'garbage', 'HTTP_CF_CONNECTING_IP' => '1.2.3.4' ), 'CF-Connecting-IP', array( 'garbage' ), false ),
+);
+foreach ( $reliable_cases as list( $label, $server, $header, $proxies, $expected ) ) {
+	$actual = ADC_Security_Ip::evaluate_client_ip_reliability( $server, $header, $proxies );
+	if ( $actual !== $expected ) {
+		$fail( sprintf( 'evaluate_client_ip_reliability (%s) expected %s, got %s.', $label, $expected ? 'true' : 'false', $actual ? 'true' : 'false' ) );
+	}
+}
+
 fwrite( STDOUT, "IP helper tests passed.\n" );

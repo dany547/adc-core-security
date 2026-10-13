@@ -15,8 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ADC_Security_Stats {
 
 	const CACHE_KEY     = 'adc_security_login_stats';
-	const WOO_CACHE_KEY = 'adc_security_woo_stats';
-	const CACHE_TTL     = 5 * MINUTE_IN_SECONDS;
+	const WOO_CACHE_KEY      = 'adc_security_woo_stats';
+	const FIREWALL_CACHE_KEY = 'adc_security_firewall_stats_';
+	const CACHE_TTL          = 5 * MINUTE_IN_SECONDS;
 
 	/**
 	 * Login/lockout statistics for the dashboard's Login & Lockout card.
@@ -71,13 +72,43 @@ class ADC_Security_Stats {
 		$flagged = array( 'woo_checkout_flagged', 'woo_registration_flagged', 'woo_lost_password_flagged' );
 
 		$stats = array(
-			'blocked_7d'  => self::count_types_since( $table, $blocked, 7 ),
-			'flagged_7d'  => self::count_types_since( $table, $flagged, 7 ),
-			'blocked_30d' => self::count_types_since( $table, $blocked, 30 ),
-			'flagged_30d' => self::count_types_since( $table, $flagged, 30 ),
+			'blocked_7d'  => array_sum( self::count_types_since( $blocked, time() - ( 7 * DAY_IN_SECONDS ) ) ),
+			'flagged_7d'  => array_sum( self::count_types_since( $flagged, time() - ( 7 * DAY_IN_SECONDS ) ) ),
+			'blocked_30d' => array_sum( self::count_types_since( $blocked, time() - ( 30 * DAY_IN_SECONDS ) ) ),
+			'flagged_30d' => array_sum( self::count_types_since( $flagged, time() - ( 30 * DAY_IN_SECONDS ) ) ),
 		);
 
 		set_transient( self::WOO_CACHE_KEY, $stats, self::CACHE_TTL );
+
+		return $stats;
+	}
+
+	/**
+	 * Firewall and protection counts for the Firewall tab's "Last N days" panel.
+	 *
+	 * @param int $days Window length in days.
+	 * @return array{rule_blocks:int,rate_limited:int,lockout:int,ip_denied:int}
+	 */
+	public static function get_firewall_stats( $days = 7 ) {
+		$days = max( 1, (int) $days );
+		$key  = self::FIREWALL_CACHE_KEY . $days;
+
+		$cached = get_transient( $key );
+		if ( false !== $cached ) {
+			return $cached;
+		}
+
+		$since  = time() - ( $days * DAY_IN_SECONDS );
+		$counts = self::count_types_since( array( 'rate_limited', 'lockout', 'ip_denied' ), $since );
+
+		$stats = array(
+			'rule_blocks'  => self::count_events( ADC_Security_Firewall_Rules::EVENT_TYPE, $since, ADC_Security_Events::SEVERITY_CRITICAL ),
+			'rate_limited' => $counts['rate_limited'],
+			'lockout'      => $counts['lockout'],
+			'ip_denied'    => $counts['ip_denied'],
+		);
+
+		set_transient( $key, $stats, self::CACHE_TTL );
 
 		return $stats;
 	}
@@ -162,31 +193,66 @@ class ADC_Security_Stats {
 	public static function flush_cache() {
 		delete_transient( self::CACHE_KEY );
 		delete_transient( self::WOO_CACHE_KEY );
+		delete_transient( self::FIREWALL_CACHE_KEY . 7 );
 	}
 
 	/**
-	 * Count rows whose event_type is in $types, in the last $days days.
+	 * Count events per type since a Unix timestamp. Every requested type is
+	 * present in the result, with 0 when it has no rows.
 	 *
-	 * @param string $table Events table name.
-	 * @param array  $types Event type slugs.
-	 * @param int    $days  Window length.
-	 * @return int
+	 * @param array $types Event type slugs.
+	 * @param int   $since Unix timestamp; rows at or after it are counted.
+	 * @return array<string,int> event_type => count.
 	 */
-	private static function count_types_since( $table, array $types, $days ) {
+	public static function count_types_since( array $types, $since ) {
+		$types  = array_values( array_unique( array_filter( array_map( 'strval', $types ) ) ) );
+		$counts = array_fill_keys( $types, 0 );
 		if ( empty( $types ) ) {
-			return 0;
+			return $counts;
 		}
 
 		global $wpdb;
 
-		$since        = gmdate( 'Y-m-d H:i:s', time() - ( $days * DAY_IN_SECONDS ) );
+		$table        = ADC_Security_Install::events_table();
 		$placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
-		$params       = array_merge( array_values( $types ), array( $since ) );
+		$params       = array_merge( $types, array( gmdate( 'Y-m-d H:i:s', (int) $since ) ) );
+
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT event_type, COUNT(*) AS total FROM {$table} WHERE event_type IN ($placeholders) AND event_time >= %s GROUP BY event_type", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+				...$params
+			),
+			ARRAY_A
+		);
+
+		foreach ( (array) $rows as $row ) {
+			if ( isset( $counts[ $row['event_type'] ] ) ) {
+				$counts[ $row['event_type'] ] = (int) $row['total'];
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * Count rows of one event type with an exact severity since a Unix timestamp.
+	 *
+	 * @param string $event_type Event type slug.
+	 * @param int    $since      Unix timestamp.
+	 * @param int    $severity   Exact severity to count.
+	 * @return int
+	 */
+	private static function count_events( $event_type, $since, $severity ) {
+		global $wpdb;
+
+		$table = ADC_Security_Install::events_table();
 
 		return (int) $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT COUNT(*) FROM {$table} WHERE event_type IN ($placeholders) AND event_time >= %s", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-				...$params
+				"SELECT COUNT(*) FROM {$table} WHERE event_type = %s AND severity = %d AND event_time >= %s", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTableName
+				$event_type,
+				(int) $severity,
+				gmdate( 'Y-m-d H:i:s', (int) $since )
 			)
 		);
 	}

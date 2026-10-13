@@ -30,6 +30,9 @@ class ADC_Security_Firewall_Registry {
 	const CLASS_AFFECTED     = 'affected';
 	const CLASS_UNKNOWN      = 'unknown';
 
+	const KIND_CVE         = 'cve';
+	const KIND_GENERIC     = 'generic';
+
 	const SOURCE_NEWS     = 'https://wordpress.org/news/';
 	const SOURCE_ADVISORY = 'https://github.com/advisories/GHSA-7hp8-65ch-5whp';
 
@@ -43,6 +46,7 @@ class ADC_Security_Firewall_Registry {
 		return array(
 			'block_rest_batch_unauth'     => array(
 				'id'              => 'block_rest_batch_unauth',
+				'kind'            => 'cve',
 				'cve'             => 'CVE-2026-63030',
 				'title'           => 'Unauthenticated REST batch route',
 				'summary'         => 'The REST API batch route (/batch/v1) can be abused without logging in, the first half of a pre-authentication remote code execution chain.',
@@ -59,6 +63,7 @@ class ADC_Security_Firewall_Registry {
 			),
 			'reject_author_query_injection' => array(
 				'id'              => 'reject_author_query_injection',
+				'kind'            => 'cve',
 				'cve'             => 'CVE-2026-60137',
 				'title'           => 'author__not_in SQL injection',
 				'summary'         => 'WP_Query author__in / author__not_in arguments are not sanitised, allowing SQL injection. It is reachable through REST author_exclude and batch sub-requests.',
@@ -76,6 +81,7 @@ class ADC_Security_Firewall_Registry {
 			),
 			'block_page_template_traversal' => array(
 				'id'              => 'block_page_template_traversal',
+				'kind'            => 'cve',
 				'cve'             => 'CVE-2026-87902',
 				'title'           => 'Page template path traversal (LFI)',
 				'summary'         => 'The pagename query variable is not validated before page-template resolution, so encoded path traversal can include local files, leading to remote code execution.',
@@ -113,7 +119,47 @@ class ADC_Security_Firewall_Registry {
 				'matcher'         => 'contains_traversal',
 				'sources'         => array( self::SOURCE_NEWS ),
 			),
+			'block_vulnerability_probes'  => array(
+				'id'              => 'block_vulnerability_probes',
+				'kind'            => 'generic',
+				'cve'             => '',
+				'title'           => 'Stop vulnerability scanners',
+				'summary'         => 'Bots that probe for secret files and known vulnerable paths are slowed down after a few attempts.',
+				'severity'        => 'medium',
+				'scope'           => 'frontend',
+				'requires_unauth' => true,
+				'affected'        => array(),
+				'fixed'           => array(),
+				'matcher'         => 'is_probe_path',
+				'sources'         => array(),
+			),
+			'limit_anonymous_search'      => array(
+				'id'              => 'limit_anonymous_search',
+				'kind'            => 'generic',
+				'cve'             => '',
+				'title'           => 'Limit repeated searches',
+				'summary'         => 'One visitor cannot flood your search and slow the site for everyone.',
+				'severity'        => 'medium',
+				'scope'           => 'frontend',
+				'requires_unauth' => true,
+				'affected'        => array(),
+				'fixed'           => array(),
+				'matcher'         => 'search_token_bucket',
+				'sources'         => array(),
+			),
 		);
+	}
+
+	/**
+	 * Whether a rule id is a generic (non-CVE) rule.
+	 *
+	 * @param string $rule_id Rule id from all().
+	 * @return bool
+	 */
+	public static function is_generic( string $rule_id ): bool {
+		$rules = self::all();
+
+		return is_string( $rule_id ) && isset( $rules[ $rule_id ] ) && self::KIND_GENERIC === $rules[ $rule_id ]['kind'];
 	}
 
 	/**
@@ -144,7 +190,12 @@ class ADC_Security_Firewall_Registry {
 			);
 		}
 
-		$rule    = $rules[ $rule_id ];
+		$rule = $rules[ $rule_id ];
+
+		if ( self::KIND_GENERIC === $rule['kind'] ) {
+			return self::generic_status( $rule, $opts );
+		}
+
 		$version = self::version_label( $wp_version );
 		list( $class, $fixed_in ) = self::classify( $rule, $wp_version );
 
@@ -204,6 +255,58 @@ class ADC_Security_Firewall_Registry {
 	}
 
 	/**
+	 * State of a generic rule. Generic rules apply to every WordPress version,
+	 * so they are never not_needed. When the client IP cannot be verified
+	 * behind a proxy (opts['ip_unreliable']), they only log.
+	 *
+	 * @param array $rule Generic rule definition.
+	 * @param array $opts The adc_security_firewall option array (plus ip_unreliable).
+	 * @return array{state:string,reason:string}
+	 */
+	private static function generic_status( array $rule, array $opts ) {
+		if ( empty( $opts['enabled'] ) ) {
+			return array(
+				'state'  => self::STATE_DISABLED,
+				'reason' => 'The firewall is turned off.',
+			);
+		}
+
+		$setting = null;
+
+		if ( isset( $opts['rules'] ) && is_array( $opts['rules'] ) && array_key_exists( $rule['id'], $opts['rules'] ) ) {
+			$setting = $opts['rules'][ $rule['id'] ];
+		}
+
+		if ( null === $setting || 'off' === $setting ) {
+			return array(
+				'state'  => self::STATE_DISABLED,
+				'reason' => 'This rule is switched off.',
+			);
+		}
+
+		if ( ! empty( $opts['ip_unreliable'] ) ) {
+			return array(
+				'state'  => self::STATE_MONITOR,
+				'reason' => 'The client IP could not be verified behind a trusted proxy, so this rule only logs matches.',
+			);
+		}
+
+		$mode = isset( $opts['mode'] ) ? $opts['mode'] : '';
+
+		if ( 'monitor' === $mode || 'monitor' === $setting ) {
+			return array(
+				'state'  => self::STATE_MONITOR,
+				'reason' => 'Monitor mode: matching requests are logged but not blocked.',
+			);
+		}
+
+		return array(
+			'state'  => self::STATE_ACTIVE,
+			'reason' => 'Matching requests are blocked with HTTP 429 once the limit is reached.',
+		);
+	}
+
+	/**
 	 * Whether a WordPress version needs no protection from a rule.
 	 *
 	 * True when the version already includes the fix on its branch, or when
@@ -238,6 +341,11 @@ class ADC_Security_Firewall_Registry {
 	 * @return array{0:string,1:string|null} Class constant and the fixed version when fixed.
 	 */
 	private static function classify( array $rule, $wp_version ) {
+		// Generic rules have no affected range; they always apply.
+		if ( self::KIND_GENERIC === $rule['kind'] ) {
+			return array( self::CLASS_AFFECTED, null );
+		}
+
 		$version = self::parse_version( $wp_version );
 
 		if ( null === $version ) {

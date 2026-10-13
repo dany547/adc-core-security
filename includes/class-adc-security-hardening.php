@@ -496,6 +496,63 @@ class ADC_Security_Hardening {
 	private function init_user_enumeration_prevention() {
 		add_action( 'init', array( $this, 'block_author_enumeration' ), 1 );
 		add_filter( 'rest_request_before_callbacks', array( $this, 'block_rest_user_enumeration' ), 5, 3 );
+		add_filter( 'wp_sitemaps_add_provider', array( $this, 'remove_users_sitemap_provider' ), 10, 2 );
+		add_filter( 'oembed_response_data', array( $this, 'strip_oembed_author_data' ), 10, 1 );
+		add_filter( 'wp_login_errors', array( $this, 'generic_login_error' ), 10, 1 );
+	}
+
+	/**
+	 * Remove the users provider from the core sitemap.
+	 *
+	 * @param WP_Sitemaps_Provider|false $provider Provider instance being registered.
+	 * @param string                     $name     Provider name.
+	 * @return WP_Sitemaps_Provider|false
+	 */
+	public function remove_users_sitemap_provider( $provider, $name ) {
+		return 'users' === $name ? false : $provider;
+	}
+
+	/**
+	 * Remove author name and URL from oEmbed data sent to public requests.
+	 *
+	 * @param mixed $data oEmbed response data.
+	 * @return mixed
+	 */
+	public function strip_oembed_author_data( $data ) {
+		if ( is_user_logged_in() || ! is_array( $data ) ) {
+			return $data;
+		}
+
+		unset( $data['author_name'], $data['author_url'] );
+		return $data;
+	}
+
+	/**
+	 * Replace invalid-username and wrong-password messages with one generic message.
+	 *
+	 * Only applies when every error code is one of the credential codes, so 2FA,
+	 * lockout, CAPTCHA and other plugin or WordPress messages are left untouched.
+	 * login_errors receives only rendered HTML, so the wp_login_errors filter is
+	 * used because it still carries the error codes.
+	 *
+	 * @param mixed $errors WP_Error for the login screen.
+	 * @return mixed
+	 */
+	public function generic_login_error( $errors ) {
+		if ( ! is_wp_error( $errors ) ) {
+			return $errors;
+		}
+
+		$credential_codes = array( 'invalid_username', 'invalid_email', 'incorrect_password' );
+		$codes            = $errors->get_error_codes();
+
+		if ( empty( $codes ) || array_diff( $codes, $credential_codes ) ) {
+			return $errors;
+		}
+
+		$generic = new WP_Error();
+		$generic->add( 'incorrect_password', 'The username or password is incorrect.' );
+		return $generic;
 	}
 
 	/**

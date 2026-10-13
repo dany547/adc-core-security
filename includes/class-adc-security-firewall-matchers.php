@@ -41,6 +41,48 @@ class ADC_Security_Firewall_Matchers {
 	const REST_BATCH_ROUTE = '/batch/v1';
 
 	/**
+	 * Decode passes performed on a probe path, and the longest path inspected.
+	 */
+	const PROBE_DECODE_PASSES = 3;
+	const PROBE_MAX_LENGTH    = 2048;
+
+	/**
+	 * Lower-case paths that scanners probe for. An entry ending in "/" is a
+	 * folder (matches the folder and anything below it). Other entries match
+	 * the exact path or the path followed by "/", "." or "-".
+	 *
+	 * @var string[]
+	 */
+	private static $probe_paths = array(
+		'/.env',
+		'/.git/',
+		'/.svn/',
+		'/.hg/',
+		'/.aws/',
+		'/.ssh/',
+		'/.ds_store',
+		'/phpmyadmin',
+		'/pma/',
+		'/adminer',
+		'/vendor/phpunit',
+		'/wp-content/debug.log',
+		'/backup.sql',
+		'/dump.sql',
+		'/database.sql',
+		'/id_rsa',
+		'/xmlrpc.php.bak',
+	);
+
+	/**
+	 * Lower-case prefixes that scanners probe for (backup copies of wp-config).
+	 *
+	 * @var string[]
+	 */
+	private static $probe_prefixes = array(
+		'/wp-config.php.',
+	);
+
+	/**
 	 * Detect path traversal in a request value, at any encoding depth.
 	 *
 	 * Traversal always needs a ".." component, so that is the invariant this
@@ -233,6 +275,99 @@ class ADC_Security_Firewall_Matchers {
 		$route = isset( $matches[1] ) ? $matches[1] : '';
 
 		return '/' . ltrim( $route, '/' );
+	}
+
+	/**
+	 * Normalise a request path for probe matching: drops the query string and
+	 * fragment, decodes up to PROBE_DECODE_PASSES times, lower-cases, collapses
+	 * repeated slashes and makes sure the path starts with "/".
+	 *
+	 * @param string $path Request path, optionally with a query string.
+	 * @return string Normalised path, or '' for an unusable value.
+	 */
+	public static function normalize_probe_path( $path ) {
+		if ( ! is_string( $path ) || '' === $path ) {
+			return '';
+		}
+
+		$path = explode( '?', $path, 2 )[0];
+		$path = explode( '#', $path, 2 )[0];
+		$path = substr( $path, 0, self::PROBE_MAX_LENGTH );
+
+		for ( $i = 0; $i < self::PROBE_DECODE_PASSES; $i++ ) {
+			$decoded = rawurldecode( $path );
+
+			if ( $decoded === $path ) {
+				break;
+			}
+
+			$path = $decoded;
+		}
+
+		$path = strtolower( $path );
+		$path = (string) preg_replace( '#/+#', '/', $path );
+
+		if ( '' === $path ) {
+			return '';
+		}
+
+		if ( '/' !== $path[0] ) {
+			$path = '/' . $path;
+		}
+
+		return $path;
+	}
+
+	/**
+	 * Whether a request path addresses a secret file or a known vulnerable
+	 * path that scanners look for (version control folders, .env files,
+	 * database dumps, phpMyAdmin and similar). Used only for requests that
+	 * WordPress resolves as 404, so ordinary pages and assets never match.
+	 *
+	 * Matching is a fixed list of string comparisons, so it has no regex
+	 * backtracking. "/.well-known/" is never matched.
+	 *
+	 * @param string $path Request path, optionally with a query string.
+	 * @return bool
+	 */
+	public static function is_probe_path( $path ) {
+		$normalised = self::normalize_probe_path( $path );
+
+		if ( '' === $normalised ) {
+			return false;
+		}
+
+		foreach ( self::$probe_paths as $entry ) {
+			$base = rtrim( $entry, '/' );
+
+			if ( $normalised === $base ) {
+				return true;
+			}
+
+			if ( '/' === substr( $entry, -1 ) ) {
+				if ( 0 === strpos( $normalised, $base . '/' ) ) {
+					return true;
+				}
+
+				continue;
+			}
+
+			if ( 0 === strpos( $normalised, $base ) ) {
+				$next = substr( $normalised, strlen( $base ), 1 );
+
+				if ( '/' === $next || '.' === $next || '-' === $next ) {
+					return true;
+				}
+			}
+		}
+
+		foreach ( self::$probe_prefixes as $prefix ) {
+			if ( 0 === strpos( $normalised, $prefix ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

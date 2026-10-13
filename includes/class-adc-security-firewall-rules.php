@@ -39,6 +39,19 @@ class ADC_Security_Firewall_Rules {
 	const RULE_PAGE_TEMPLATE = 'block_page_template_traversal';
 	const RULE_BATCH         = 'block_rest_batch_unauth';
 	const RULE_AUTHOR        = 'reject_author_query_injection';
+	const RULE_PROBE         = 'block_vulnerability_probes';
+	const RULE_SEARCH        = 'limit_anonymous_search';
+
+	const PROBE_THRESHOLD      = 8;
+	const PROBE_WINDOW         = 300;
+	const PROBE_RETRY_AFTER    = 900;
+	const PROBE_MAX_STAMPS     = 20;
+	const PROBE_HITS_TRANSIENT = 'adc_fw_probe_hits_';
+	const PROBE_TRIP_TRANSIENT = 'adc_fw_probe_trip_';
+	const SEARCH_CAPACITY      = 20;
+	const SEARCH_REFILL_SECS   = 3;
+	const LOG_THROTTLE_SECS    = 60;
+	const LOG_THROTTLE_KEY     = 'adc_fw_log_';
 
 	const ALLOWLIST_MAX         = 50;
 	const SAFE_MODE_LIMIT       = 5;
@@ -71,6 +84,13 @@ class ADC_Security_Firewall_Rules {
 	 * @var array|null
 	 */
 	private $options_cache = null;
+
+	/**
+	 * Whether the client IP can be trusted, read once per request (null = not read yet).
+	 *
+	 * @var bool|null
+	 */
+	private $ip_reliable = null;
 
 	// -------------------------------------------------------------------------
 	// Options
@@ -148,9 +168,11 @@ class ADC_Security_Firewall_Rules {
 		$options          = self::get_options();
 		$this->wp_version = (string) get_bloginfo( 'version' );
 
+		$status_options = $this->decision_options( $options );
+
 		$states = array();
 		foreach ( ADC_Security_Firewall_Registry::get_rule_ids() as $rule_id ) {
-			$status           = ADC_Security_Firewall_Registry::status( $rule_id, $this->wp_version, $options );
+			$status             = ADC_Security_Firewall_Registry::status( $rule_id, $this->wp_version, $status_options );
 			$states[ $rule_id ] = $status['state'];
 		}
 
@@ -177,6 +199,54 @@ class ADC_Security_Firewall_Rules {
 		if ( isset( $this->active[ self::RULE_BATCH ] ) || isset( $this->active[ self::RULE_AUTHOR ] ) ) {
 			add_filter( 'rest_pre_dispatch', array( $this, 'guard_rest' ), 1, 3 );
 		}
+
+		if ( isset( $this->active[ self::RULE_PROBE ] ) ) {
+			add_action( 'template_redirect', array( $this, 'guard_probe_paths' ), 0 );
+		}
+
+		if ( isset( $this->active[ self::RULE_SEARCH ] ) ) {
+			add_action( 'pre_get_posts', array( $this, 'guard_anonymous_search' ) );
+		}
+	}
+
+	/**
+	 * Whether the client IP can be trusted. Asks ADC_Security_Ip when it offers
+	 * the check; assumes true otherwise.
+	 *
+	 * @return bool
+	 */
+	private function ip_reliable() {
+		if ( null === $this->ip_reliable ) {
+			$this->ip_reliable = self::read_ip_reliable();
+		}
+
+		return $this->ip_reliable;
+	}
+
+	/**
+	 * @return bool
+	 */
+	private static function read_ip_reliable() {
+		if ( method_exists( 'ADC_Security_Ip', 'is_client_ip_reliable' ) ) {
+			return (bool) ADC_Security_Ip::is_client_ip_reliable();
+		}
+
+		return true;
+	}
+
+	/**
+	 * Options for registry status and engine decisions: the stored options plus
+	 * the request's IP trust state. Never saved back to the database.
+	 *
+	 * @param array|null $options Options to start from (defaults to the current request's options).
+	 * @return array
+	 */
+	private function decision_options( $options = null ) {
+		$options = null === $options ? $this->current_options() : $options;
+
+		$options['ip_unreliable'] = ! $this->ip_reliable();
+
+		return $options;
 	}
 
 	/**
@@ -345,6 +415,257 @@ class ADC_Security_Firewall_Rules {
 		if ( 'block' === $this->screen( self::RULE_AUTHOR, array( $this, 'find_author_query_injection' ) ) ) {
 			$this->deny_request();
 		}
+	}
+
+	/**
+	 * Count probe-shaped 404s per IP. Once an IP reaches PROBE_THRESHOLD in
+	 * PROBE_WINDOW seconds the rule trips for PROBE_RETRY_AFTER seconds: in
+	 * enforce mode the next probe-shaped requests get 429. Only requests that
+	 * WordPress resolves as 404 and whose path is on the probe list count.
+	 * Fails open.
+	 */
+	public function guard_probe_paths() {
+		$retry = 0;
+
+		try {
+			if ( is_admin() || is_user_logged_in() || ! is_404() ) {
+				return;
+			}
+
+			$path = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Matched, never output.
+
+			if ( ! is_string( $path ) || ! ADC_Security_Firewall_Matchers::is_probe_path( $path ) ) {
+				return;
+			}
+
+			$ip = ADC_Security_Ip::get_client_ip();
+
+			if ( '' === $ip ) {
+				return;
+			}
+
+			$normalised  = ADC_Security_Firewall_Matchers::normalize_probe_path( $path );
+			$fingerprint = ADC_Security_Firewall_Engine::fingerprint( self::RULE_PROBE, $normalised );
+
+			if ( $this->should_skip( $fingerprint ) ) {
+				return;
+			}
+
+			$hit = array(
+				'target' => 'probe_path',
+				'value'  => $normalised,
+				'detail' => 'Request for a secret file or a known vulnerable path.',
+			);
+
+			if ( ! get_transient( self::PROBE_TRIP_TRANSIENT . md5( $ip ) ) ) {
+				$hits = $this->record_probe_hit( $ip );
+
+				if ( $hits < self::PROBE_THRESHOLD ) {
+					$this->log_throttled(
+						self::RULE_PROBE,
+						$hit,
+						'monitor',
+						$fingerprint,
+						$ip,
+						sprintf( 'Probe 404 %1$d of %2$d within %3$d seconds. Not blocked yet.', $hits, self::PROBE_THRESHOLD, self::PROBE_WINDOW )
+					);
+					return;
+				}
+
+				set_transient( self::PROBE_TRIP_TRANSIENT . md5( $ip ), 1, self::PROBE_RETRY_AFTER );
+
+				$this->log_throttled(
+					self::RULE_PROBE,
+					$hit,
+					'monitor',
+					$fingerprint,
+					$ip,
+					sprintf( 'Probe threshold reached (%1$d probe 404s within %2$d seconds). Further probe requests from this IP are blocked for %3$d minutes in enforce mode.', $hits, self::PROBE_WINDOW, self::PROBE_RETRY_AFTER / MINUTE_IN_SECONDS ),
+					true
+				);
+				return;
+			}
+
+			$decision = $this->generic_decision( self::RULE_PROBE, $ip );
+
+			if ( 'block' === $decision['action'] ) {
+				$retry = self::PROBE_RETRY_AFTER;
+				$this->log_throttled( self::RULE_PROBE, $hit, 'block', $fingerprint, $ip, $decision['reason'] );
+			} elseif ( 'monitor' === $decision['action'] ) {
+				$this->log_throttled( self::RULE_PROBE, $hit, 'monitor', $fingerprint, $ip, $decision['reason'] );
+			}
+		} catch ( Throwable $error ) {
+			$this->log_error( $error, self::RULE_PROBE );
+			return;
+		}
+
+		if ( $retry > 0 ) {
+			$this->send_too_many_requests( $retry );
+		}
+	}
+
+	/**
+	 * Per-IP token bucket for anonymous front-end searches. Over the limit:
+	 * enforce mode answers 429, monitor mode only logs. Fails open.
+	 *
+	 * @param WP_Query $query Query being prepared.
+	 */
+	public function guard_anonymous_search( $query ) {
+		$retry = 0;
+
+		try {
+			if ( is_admin() || is_user_logged_in() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+				return;
+			}
+
+			if ( ! ( $query instanceof WP_Query ) || ! $query->is_main_query() || ! $query->is_search() ) {
+				return;
+			}
+
+			if ( '' === trim( (string) $query->get( 's' ) ) ) {
+				return;
+			}
+
+			$ip = ADC_Security_Ip::get_client_ip();
+
+			if ( '' === $ip ) {
+				return;
+			}
+
+			$fingerprint = ADC_Security_Firewall_Engine::fingerprint( self::RULE_SEARCH, 'search' );
+
+			if ( $this->should_skip( $fingerprint ) || ! class_exists( 'ADC_Security_Rate_Limit' ) ) {
+				return;
+			}
+
+			if ( ADC_Security_Rate_Limit::consume_token( 'search', $ip, self::SEARCH_CAPACITY, self::SEARCH_REFILL_SECS ) ) {
+				return;
+			}
+
+			$decision = $this->generic_decision( self::RULE_SEARCH, $ip );
+
+			if ( 'block' === $decision['action'] ) {
+				$retry = self::SEARCH_REFILL_SECS;
+			}
+
+			if ( 'allow' !== $decision['action'] ) {
+				$this->log_throttled(
+					self::RULE_SEARCH,
+					array(
+						'target' => 'search',
+						'value'  => 'search',
+						'detail' => 'More searches than the limit allows.',
+					),
+					$decision['action'],
+					$fingerprint,
+					$ip,
+					$decision['reason']
+				);
+			}
+		} catch ( Throwable $error ) {
+			$this->log_error( $error, self::RULE_SEARCH );
+			return;
+		}
+
+		if ( $retry > 0 ) {
+			$this->send_too_many_requests( $retry );
+		}
+	}
+
+	/**
+	 * Engine decision for a generic rule on an anonymous request from $ip.
+	 *
+	 * @param string $rule_id Generic rule id.
+	 * @param string $ip      Client IP.
+	 * @return array{action:string,reason:string}
+	 */
+	private function generic_decision( $rule_id, $ip ) {
+		return ADC_Security_Firewall_Engine::decide(
+			array(
+				'rule_id'        => $rule_id,
+				'wp_version'     => $this->wp_version,
+				'logged_in'      => false,
+				'can_edit'       => false,
+				'is_cli'         => self::is_cli(),
+				'is_cron'        => wp_doing_cron(),
+				'ip_allowlisted' => $this->ip_allowlisted( $ip ),
+				'kill_switch'    => self::kill_switch(),
+				'matched'        => true,
+			),
+			$this->decision_options()
+		);
+	}
+
+	/**
+	 * Add one probe 404 to the IP's sliding window.
+	 *
+	 * @param string $ip Client IP.
+	 * @return int Probe 404s from this IP in the window, including this one. The window is cleared when the threshold is reached.
+	 */
+	private function record_probe_hit( $ip ) {
+		$key    = self::PROBE_HITS_TRANSIENT . md5( $ip );
+		$now    = time();
+		$stamps = get_transient( $key );
+		$stamps = is_array( $stamps ) ? $stamps : array();
+
+		$stamps[] = $now;
+		$stamps   = array_slice( $stamps, -self::PROBE_MAX_STAMPS );
+
+		$hits = 0;
+		foreach ( $stamps as $stamp ) {
+			if ( (int) $stamp >= $now - self::PROBE_WINDOW ) {
+				++$hits;
+			}
+		}
+
+		if ( $hits >= self::PROBE_THRESHOLD ) {
+			delete_transient( $key );
+			return $hits;
+		}
+
+		set_transient( $key, $stamps, self::PROBE_WINDOW );
+
+		return $hits;
+	}
+
+	/**
+	 * Log a generic-rule match at most once per minute per IP and rule, so a
+	 * scanner cannot flood the Activity log. The first match is always logged.
+	 *
+	 * @param string $rule_id     Generic rule id.
+	 * @param array  $hit         Hit array (target, value, detail).
+	 * @param string $action      monitor|block.
+	 * @param string $fingerprint Match fingerprint.
+	 * @param string $ip          Client IP.
+	 * @param string $reason      Reason text.
+	 * @param bool   $force       Log even inside the throttle window.
+	 */
+	private function log_throttled( $rule_id, array $hit, $action, $fingerprint, $ip, $reason, $force = false ) {
+		$key = self::LOG_THROTTLE_KEY . md5( $rule_id . '|' . $ip );
+
+		if ( ! $force && get_transient( $key ) ) {
+			return;
+		}
+
+		set_transient( $key, 1, self::LOG_THROTTLE_SECS );
+
+		$this->log_match( self::rule( $rule_id ), $hit, $action, $fingerprint, $ip, $reason );
+	}
+
+	/**
+	 * Send a 429 response and stop the request.
+	 *
+	 * @param int $retry_after Seconds until the client may retry.
+	 */
+	private function send_too_many_requests( $retry_after ) {
+		status_header( 429 );
+		nocache_headers();
+		header( 'Retry-After: ' . (int) $retry_after );
+		wp_die(
+			esc_html__( 'Too many requests. Please slow down and try again shortly.', 'adc-security' ),
+			429,
+			array( 'response' => 429 )
+		);
 	}
 
 	/**
@@ -736,11 +1057,14 @@ class ADC_Security_Firewall_Rules {
 		$target   = isset( $hit['target'] ) ? (string) $hit['target'] : '';
 		$detail   = isset( $hit['detail'] ) && '' !== $hit['detail'] ? (string) $hit['detail'] : (string) $rule['title'];
 
+		// Generic rules have no CVE; the rule title names the match instead.
+		$label = '' !== $cve ? $cve : (string) $rule['title'];
+
 		$this->log_event(
 			self::EVENT_TYPE,
 			$enforced ? ADC_Security_Events::SEVERITY_CRITICAL : ADC_Security_Events::SEVERITY_WARNING,
 			$ip,
-			$cve . ' ' . $target,
+			trim( $label . ' ' . $target ),
 			array(
 				'cve'         => $cve,
 				'target'      => $target,
@@ -989,8 +1313,9 @@ class ADC_Security_Firewall_Rules {
 	 * @return array{state:string,reason:string}
 	 */
 	public static function get_effective_status( $rule_id ) {
-		$options = self::get_options();
-		$status  = ADC_Security_Firewall_Registry::status( $rule_id, (string) get_bloginfo( 'version' ), $options );
+		$options                  = self::get_options();
+		$options['ip_unreliable'] = ! self::read_ip_reliable();
+		$status                   = ADC_Security_Firewall_Registry::status( $rule_id, (string) get_bloginfo( 'version' ), $options );
 
 		if ( ADC_Security_Firewall_Registry::STATE_ACTIVE === $status['state'] && self::safe_mode_active( $options, $rule_id ) ) {
 			return array(
@@ -1076,14 +1401,17 @@ class ADC_Security_Firewall_Rules {
 		foreach ( ADC_Security_Firewall_Registry::get_rule_ids() as $rule_id ) {
 			$status = self::get_effective_status( $rule_id );
 
-			if ( ADC_Security_Firewall_Registry::STATE_NOT_NEEDED === $status['state'] ) {
-				continue;
-			}
+			// "Every rule is off" is about the CVE rules; generic rules are optional extras.
+			if ( ! ADC_Security_Firewall_Registry::is_generic( $rule_id ) ) {
+				if ( ADC_Security_Firewall_Registry::STATE_NOT_NEEDED === $status['state'] ) {
+					continue;
+				}
 
-			++$applicable;
+				++$applicable;
 
-			if ( ADC_Security_Firewall_Registry::STATE_DISABLED === $status['state'] ) {
-				++$off;
+				if ( ADC_Security_Firewall_Registry::STATE_DISABLED === $status['state'] ) {
+					++$off;
+				}
 			}
 
 			if ( ADC_Security_Firewall_Registry::STATE_MONITOR === $status['state'] && isset( $options['monitor_since'][ $rule_id ] ) && (int) $options['monitor_since'][ $rule_id ] < $cutoff ) {

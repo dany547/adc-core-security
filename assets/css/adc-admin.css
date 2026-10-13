@@ -545,6 +545,19 @@
 .adc-fw-badge-off { background: #f0f0f1; color: #3c434a; border-color: #8c8f94; }
 .adc-fw-badge-ok { background: #f0f6fc; color: #1d2327; border-color: #7f9bb8; }
 
+.adc-fw-status {
+    font-size: 15px;
+    margin: 8px 0 12px;
+}
+
+.adc-fw-glance h3 {
+    margin: 20px 0 8px;
+}
+
+.adc-fw-glance .notice {
+    margin: 12px 0 0;
+}
+
 .adc-fw-details > summary {
     cursor: pointer;
     font-size: 14px;

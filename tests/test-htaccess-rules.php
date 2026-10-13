@@ -118,6 +118,78 @@ if ( false !== strpos( $block, "\r" ) ) {
 	$fail( 'Generated .htaccess block contains unexpected carriage returns.' );
 }
 
+// Sensitive-file group: the block is only generated when the rule is selected.
+$without_sensitive = $manager->build_block( array( 'block_xmlrpc_endpoint' ) );
+if ( false !== strpos( $without_sensitive, 'debug\.log' ) || false !== strpos( $without_sensitive, 'swp)' ) ) {
+	$fail( 'Sensitive-file rules appeared without the block_sensitive_files option.' );
+}
+
+$with_sensitive = $manager->build_block( array( 'block_sensitive_files' ) );
+$begin_pos      = strpos( $with_sensitive, ADC_Security_Htaccess::BEGIN_MARKER );
+$end_pos        = strpos( $with_sensitive, ADC_Security_Htaccess::END_MARKER );
+$debug_pos      = strpos( $with_sensitive, 'debug\.log' );
+if ( false === $begin_pos || false === $end_pos || false === $debug_pos || $debug_pos < $begin_pos || $debug_pos > $end_pos ) {
+	$fail( 'Sensitive-file rules are not wrapped inside the ADC Security markers.' );
+}
+
+if ( false !== strpos( $with_sensitive, '.well-known' ) ) {
+	$fail( 'The sensitive-file block must not reference /.well-known/.' );
+}
+
+// Extract the new FilesMatch pattern and run it the way Apache does (PCRE on the basename).
+$sensitive_pattern = null;
+foreach ( $definitions['block_sensitive_files']['lines'] as $line ) {
+	if ( preg_match( '/^<FilesMatch "(.*)">$/', $line, $matches ) && false !== strpos( $matches[1], 'debug' ) ) {
+		$sensitive_pattern = $matches[1];
+	}
+}
+if ( null === $sensitive_pattern ) {
+	$fail( 'The sensitive-file FilesMatch pattern is missing.' );
+}
+
+$should_block = array(
+	'debug.log',
+	'error_log',
+	'php_errorlog',
+	'wp-config.php.bak',
+	'wp-config.php.orig',
+	'.user.ini',
+	'dump.sql',
+	'site.sql.gz',
+	'site.sql.zip',
+	'index.php.bak',
+	'page.old',
+	'page.orig',
+	'page.save',
+	'.index.php.swp',
+	'functions.php~',
+);
+$should_allow = array(
+	'wp-config-docs.html',
+	'dumpster.jpg',
+	'mysql-notes.txt',
+	'sql-guide.html',
+	'backup.zip',
+	'archive.tar.gz',
+	'bakery.png',
+	'old-photo.jpg',
+	'swapped.html',
+	'save.html',
+	'.well-known',
+	'index.php',
+);
+
+foreach ( $should_block as $name ) {
+	if ( 1 !== preg_match( '#' . $sensitive_pattern . '#', $name ) ) {
+		$fail( 'Sensitive-file pattern did not block: ' . $name );
+	}
+}
+foreach ( $should_allow as $name ) {
+	if ( 0 !== preg_match( '#' . $sensitive_pattern . '#', $name ) ) {
+		$fail( 'Sensitive-file pattern blocked a legitimate name: ' . $name );
+	}
+}
+
 $_SERVER['SERVER_SOFTWARE'] = 'LiteSpeed';
 $original = "# WordPress rules\nRewriteEngine On\n";
 file_put_contents( $test_home . '/.htaccess', $original );

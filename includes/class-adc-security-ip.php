@@ -53,6 +53,56 @@ class ADC_Security_Ip {
 	}
 
 	/**
+	 * Whether the visitor IP can be trusted for IP-based limits and lockouts.
+	 *
+	 * Behind a CDN or reverse proxy without the trusted proxy setting, every
+	 * visitor appears to come from the proxy, so IP-based rules would treat
+	 * them all as one person.
+	 *
+	 * @return bool
+	 */
+	public static function is_client_ip_reliable() {
+		$options = get_option( 'adc_security_options', array() );
+		$header  = is_array( $options ) && isset( $options['trusted_proxy_header'] ) ? trim( (string) $options['trusted_proxy_header'] ) : '';
+		$proxies = is_array( $options ) && isset( $options['trusted_proxies'] ) ? self::parse_list( (string) $options['trusted_proxies'] ) : array();
+
+		return self::evaluate_client_ip_reliability( $_SERVER, $header, $proxies ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- raw values are validated inside.
+	}
+
+	/**
+	 * Pure decision behind is_client_ip_reliable(), so it can be tested offline.
+	 *
+	 * @param array    $server  Server variables (REMOTE_ADDR and HTTP_* headers).
+	 * @param string   $header  Configured trusted proxy header, or '' when not set.
+	 * @param string[] $proxies Trusted proxy IPs/CIDRs.
+	 * @return bool False when a forwarding header is present but cannot be trusted.
+	 */
+	public static function evaluate_client_ip_reliability( array $server, $header, array $proxies ) {
+		$forwarding_keys = array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'HTTP_TRUE_CLIENT_IP' );
+		$forwarded       = false;
+		foreach ( $forwarding_keys as $key ) {
+			if ( ! empty( $server[ $key ] ) ) {
+				$forwarded = true;
+				break;
+			}
+		}
+
+		if ( ! $forwarded ) {
+			return true;
+		}
+
+		// A forwarding header arrived but no proxy is trusted to set it.
+		if ( '' === trim( (string) $header ) ) {
+			return false;
+		}
+
+		// The header is only believed when the direct connection really comes from a trusted proxy.
+		$remote = isset( $server['REMOTE_ADDR'] ) ? self::sanitize_ip( $server['REMOTE_ADDR'] ) : '';
+
+		return '' !== $remote && self::ip_matches_any( $remote, $proxies );
+	}
+
+	/**
 	 * Pick the client IP out of a forwarded-for style header.
 	 *
 	 * The left side of X-Forwarded-For is client-controlled, so the list is read

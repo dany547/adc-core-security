@@ -52,7 +52,7 @@ class ADC_Security_Rate_Limit {
 	 */
 	private $login;
 
-	public function __construct( ADC_Security_Login $login = null ) {
+	public function __construct( ?ADC_Security_Login $login = null ) {
 		$this->login = $login instanceof ADC_Security_Login ? $login : new ADC_Security_Login();
 
 		add_action( 'init', array( $this, 'guard_login_and_xmlrpc' ), 0 );
@@ -176,30 +176,66 @@ class ADC_Security_Rate_Limit {
 	 * @return bool True if a token was available and consumed.
 	 */
 	private function consume( $scope, $ip ) {
-		$config      = self::$buckets[ $scope ];
-		$key         = 'adc_rl_' . $scope . '_' . md5( $ip );
-		$now         = microtime( true );
-		$bucket      = get_transient( $key );
+		$config = self::$buckets[ $scope ];
 
+		return self::consume_token( $scope, $ip, $config['capacity'], $config['refill_secs'] );
+	}
+
+	/**
+	 * Consume one token from a named bucket for an IP, for callers outside the
+	 * fixed scopes above (for example the firewall's search limit). Same
+	 * transient storage and arithmetic as the built-in buckets.
+	 *
+	 * @param string $name        Bucket name, unique per feature.
+	 * @param string $ip          Client IP (must be non-empty).
+	 * @param int    $capacity    Maximum burst, in tokens.
+	 * @param int    $refill_secs Seconds per regenerated token.
+	 * @return bool True if a token was available and consumed.
+	 */
+	public static function consume_token( $name, $ip, $capacity, $refill_secs ) {
+		$capacity    = max( 1, (int) $capacity );
+		$refill_secs = max( 1, (int) $refill_secs );
+		$key         = 'adc_rl_' . $name . '_' . md5( $ip );
+		$step        = self::step( get_transient( $key ), microtime( true ), $capacity, $refill_secs );
+
+		set_transient( $key, $step['bucket'], $capacity * $refill_secs );
+
+		return $step['allowed'];
+	}
+
+	/**
+	 * Pure bucket step: refill the stored bucket for the time elapsed, then
+	 * take one token if one is available. Unit tested in tests/test-rate-limit.php.
+	 *
+	 * @param mixed $bucket      Stored bucket array (tokens, updated), or anything else for a new bucket.
+	 * @param float $now         Current time in seconds.
+	 * @param int   $capacity    Maximum tokens.
+	 * @param int   $refill_secs Seconds per token.
+	 * @return array{bucket:array,allowed:bool} Updated bucket and whether a token was taken.
+	 */
+	public static function step( $bucket, $now, $capacity, $refill_secs ) {
 		if ( ! is_array( $bucket ) || ! isset( $bucket['tokens'], $bucket['updated'] ) ) {
 			$bucket = array(
-				'tokens'  => $config['capacity'],
+				'tokens'  => $capacity,
 				'updated' => $now,
 			);
 		}
 
-		$elapsed           = max( 0, $now - $bucket['updated'] );
-		$bucket['tokens']  = self::refill( $bucket['tokens'], $elapsed, $config['capacity'], $config['refill_secs'] );
-		$bucket['updated'] = $now;
+		$elapsed = max( 0, $now - $bucket['updated'] );
+		$tokens  = self::refill( $bucket['tokens'], $elapsed, $capacity, $refill_secs );
 
-		$allowed = $bucket['tokens'] >= 1;
+		$allowed = $tokens >= 1;
 		if ( $allowed ) {
-			$bucket['tokens'] -= 1;
+			$tokens -= 1;
 		}
 
-		set_transient( $key, $bucket, $config['capacity'] * $config['refill_secs'] );
-
-		return $allowed;
+		return array(
+			'bucket'  => array(
+				'tokens'  => $tokens,
+				'updated' => $now,
+			),
+			'allowed' => $allowed,
+		);
 	}
 
 	/**

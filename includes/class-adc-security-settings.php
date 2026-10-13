@@ -430,7 +430,7 @@ class ADC_Security_Settings {
             'adc_security_hardening_section',
             array(
                 'label_for' => 'prevent_user_enumeration',
-                'description' => 'Blocks public access to <code>?author=N</code> queries and the REST <code>wp/v2/users</code> endpoints. Unauthenticated visitors are redirected or receive a 403. Disable if you rely on public author archives.',
+                'description' => 'Blocks public access to <code>?author=N</code> queries and the REST <code>wp/v2/users</code> endpoints. Also hides usernames in the sitemap, embeds and login error messages. Unauthenticated visitors are redirected or receive a 403. Disable if you rely on public author archives.',
             )
         );
 
@@ -2524,7 +2524,7 @@ class ADC_Security_Settings {
 							<?php wp_nonce_field( 'adc_security_csp_apply_scan', 'adc_security_csp_apply_nonce' ); ?>
 							<input type="hidden" name="action" value="adc_security_csp_apply_scan">
 
-							<?php if ( ! $headers_on ) : ?>
+							<?php if ( ! $headers ) : ?>
 								<div class="adc-csp-mode-note">
 									<p><strong>Not in use yet.</strong> Allowed sources are saved, but no policy is sent until you turn on Enable Security Headers and save.</p>
 								</div>

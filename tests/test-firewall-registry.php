@@ -40,13 +40,75 @@ $enforce = array(
 // Rule ids
 // -------------------------------------------------------------------------
 
+$probe  = 'block_vulnerability_probes';
+$search = 'limit_anonymous_search';
+
 $assert(
-	array( $rest, $author, $lfi ) === $R::get_rule_ids(),
-	'Expected the three firewall rule ids in registry order.'
+	array( $rest, $author, $lfi, $probe, $search ) === $R::get_rule_ids(),
+	'Expected the three CVE rule ids, then the two generic rule ids, in registry order.'
 );
 $assert(
-	array( $rest, $author, $lfi ) === array_keys( $R::all() ),
-	'Rule ids must match the existing virtual patch rule keys.'
+	array( $rest, $author, $lfi, $probe, $search ) === array_keys( $R::all() ),
+	'Rule ids must match the keys returned by all().'
+);
+$assert( ! $R::is_generic( $rest ) && ! $R::is_generic( $author ) && ! $R::is_generic( $lfi ), 'CVE rules must not be generic.' );
+$assert( $R::is_generic( $probe ) && $R::is_generic( $search ), 'Both generic rules must be generic.' );
+$assert( ! $R::is_generic( 'not_a_rule' ), 'Unknown ids must not be generic.' );
+$assert( 'cve' === $R::all()[ $rest ]['kind'] && 'generic' === $R::all()[ $probe ]['kind'], 'Rule kind must be cve or generic.' );
+$assert( 'Stop vulnerability scanners' === $R::all()[ $probe ]['title'], 'Unexpected title for the probe rule.' );
+$assert( 'Limit repeated searches' === $R::all()[ $search ]['title'], 'Unexpected title for the search rule.' );
+$assert( '' === $R::all()[ $probe ]['cve'] && '' === $R::all()[ $search ]['cve'], 'Generic rules must have an empty cve.' );
+
+// Generic rules: never not_needed, for any version, with or without the firewall.
+$generic_versions = array( '6.9.4', '7.2', '7.2-beta1', '4.6.9', '', 'garbage' );
+$generic_enforce = array(
+	'enabled' => 1,
+	'mode'    => 'enforce',
+	'rules'   => array(
+		$probe  => 'on',
+		$search => 'on',
+	),
+);
+
+foreach ( array( $probe, $search ) as $generic_id ) {
+	foreach ( $generic_versions as $version ) {
+		$assert(
+			'active' === $R::status( $generic_id, $version, $generic_enforce )['state'],
+			'Generic rule ' . $generic_id . ' must be active on "' . $version . '" when enabled and enforced.'
+		);
+		$assert( ! $R::is_fixed( $generic_id, $version ), 'Generic rule ' . $generic_id . ' must never be fixed.' );
+	}
+
+	$assert( 'disabled' === $R::status( $generic_id, '7.2', array( 'enabled' => 0, 'mode' => 'enforce', 'rules' => array( $generic_id => 'on' ) ) )['state'], 'Firewall off must disable ' . $generic_id . '.' );
+	$assert( 'disabled' === $R::status( $generic_id, '7.2', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $generic_id => 'off' ) ) )['state'], 'Rule off must disable ' . $generic_id . '.' );
+	$assert( 'disabled' === $R::status( $generic_id, '7.2', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array() ) )['state'], 'Missing rule must disable ' . $generic_id . '.' );
+	$assert( 'monitor' === $R::status( $generic_id, '7.2', array( 'enabled' => 1, 'mode' => 'monitor', 'rules' => array( $generic_id => 'on' ) ) )['state'], 'Monitor mode must monitor ' . $generic_id . '.' );
+	$assert( 'monitor' === $R::status( $generic_id, '7.2', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $generic_id => 'monitor' ) ) )['state'], 'Rule in monitor must monitor ' . $generic_id . '.' );
+	$assert( 'disabled' === $R::status( $generic_id, '7.2', array( 'enabled' => 0, 'mode' => 'monitor', 'rules' => array( $generic_id => 'monitor' ) ) )['state'], 'Firewall off must win over monitor for ' . $generic_id . '.' );
+
+	// An unreliable client IP forces monitor, but a switched-off rule stays off.
+	$unreliable = $R::status( $generic_id, '7.2', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $generic_id => 'on' ), 'ip_unreliable' => true ) );
+	$assert( 'monitor' === $unreliable['state'], 'Unreliable IP must put ' . $generic_id . ' in monitor.' );
+	$assert( false !== strpos( $unreliable['reason'], 'proxy' ), 'Unreliable IP reason must mention the proxy.' );
+	$assert( 'disabled' === $R::status( $generic_id, '7.2', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $generic_id => 'off' ), 'ip_unreliable' => true ) )['state'], 'Unreliable IP must not re-enable an off rule.' );
+	$assert( 'disabled' === $R::status( $generic_id, '7.2', array( 'enabled' => 0, 'ip_unreliable' => true, 'rules' => array( $generic_id => 'on' ) ) )['state'], 'Firewall off must win over unreliable IP.' );
+}
+
+// The unreliable-IP flag only changes generic rules; CVE rules keep their state.
+$assert(
+	'active' === $R::status( $rest, '6.9.4', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $rest => 'on' ), 'ip_unreliable' => true ) )['state'],
+	'Unreliable IP must not change CVE rule states.'
+);
+
+$assert(
+	'active' === $R::status( $probe, '7.2', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $probe => 'on' ), 'ip_unreliable' => false ) )['state'],
+	'A reliable IP must leave generic rules active.'
+);
+
+// Generic rules must not change the state of CVE rules on any version.
+$assert(
+	'not_needed' === $R::status( $rest, '7.0.2', array( 'enabled' => 1, 'mode' => 'enforce', 'rules' => array( $rest => 'on', $probe => 'on' ) ) )['state'],
+	'Enabling generic rules must not change a fixed CVE rule.'
 );
 
 // -------------------------------------------------------------------------
@@ -159,7 +221,7 @@ $assert( false !== strpos( $unknown['reason'], 'could not be determined' ), 'Unk
 // Rule data integrity
 // -------------------------------------------------------------------------
 
-$required = array( 'id', 'cve', 'title', 'summary', 'severity', 'scope', 'requires_unauth', 'affected', 'fixed', 'matcher', 'sources' );
+$required = array( 'id', 'kind', 'cve', 'title', 'summary', 'severity', 'scope', 'requires_unauth', 'affected', 'fixed', 'matcher', 'sources' );
 
 foreach ( $R::all() as $id => $rule ) {
 	foreach ( $required as $field ) {
@@ -170,9 +232,17 @@ foreach ( $R::all() as $id => $rule ) {
 	$assert( in_array( $rule['severity'], array( 'critical', 'high', 'medium' ), true ), 'Bad severity on ' . $id . '.' );
 	$assert( in_array( $rule['scope'], array( 'frontend', 'rest', 'any' ), true ), 'Bad scope on ' . $id . '.' );
 	$assert( is_bool( $rule['requires_unauth'] ), 'requires_unauth must be bool on ' . $id . '.' );
-	$assert( is_array( $rule['affected'] ) && ! empty( $rule['affected'] ), 'affected must be a non-empty list on ' . $id . '.' );
-	$assert( is_array( $rule['fixed'] ) && ! empty( $rule['fixed'] ), 'fixed must be a non-empty map on ' . $id . '.' );
-	$assert( is_array( $rule['sources'] ) && ! empty( $rule['sources'] ), 'sources must be a non-empty list on ' . $id . '.' );
+	$assert( is_array( $rule['affected'] ) && is_array( $rule['fixed'] ) && is_array( $rule['sources'] ), 'affected, fixed and sources must be arrays on ' . $id . '.' );
+
+	if ( 'generic' === $rule['kind'] ) {
+		$assert( '' === $rule['cve'] && array() === $rule['affected'] && array() === $rule['fixed'] && array() === $rule['sources'], 'Generic rule ' . $id . ' must have no CVE, range, fix or source.' );
+		continue;
+	}
+
+	$assert( 'cve' === $rule['kind'], 'Rule kind must be cve or generic on ' . $id . '.' );
+	$assert( ! empty( $rule['affected'] ), 'affected must be a non-empty list on ' . $id . '.' );
+	$assert( ! empty( $rule['fixed'] ), 'fixed must be a non-empty map on ' . $id . '.' );
+	$assert( ! empty( $rule['sources'] ), 'sources must be a non-empty list on ' . $id . '.' );
 
 	foreach ( $rule['sources'] as $url ) {
 		$assert( 0 === strpos( $url, 'https://' ), 'Source URL must be https on ' . $id . '.' );

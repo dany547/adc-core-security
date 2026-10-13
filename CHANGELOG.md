@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.3] - 2026-10-13
+### Added
+- **Firewall "At a glance" panel**: whether the firewall is off, in Log only mode or blocking; what protects the site (firewall rules, `.htaccess` rules, rate limiting, lockouts, IP lists, user enumeration, XML-RPC) with a link to where each is set; and the number of blocks, rate limits, lockouts and denied IPs in the last 7 days.
+- **CDN and proxy warning**: when a site sits behind Cloudflare or another proxy and the trusted proxy setting is empty or does not match, the firewall says so. In that situation every visitor shares one IP, so the IP-based rules below run in Log only mode instead of blocking everyone at once.
+- **General protection rules** (work on any WordPress version, off by default, with Log only and safe mode like the CVE rules): **Stop vulnerability scanners** (a visitor who requests several well-known secret paths such as `.env`, `.git` or `phpmyadmin` that do not exist is slowed down; ordinary 404s and `/.well-known/` are never counted) and **Limit repeated searches** (one visitor cannot flood the site search).
+- **Block sensitive files** now also covers `debug.log`, `error_log`, `wp-config.php` backups, SQL dumps and editor backup files. Existing sites get the new lines the next time the rules are applied.
+- **User enumeration protection** now also removes users from the sitemap, author details from embeds and uses one generic message for a wrong username or password.
+
+### Fixed
+- **Warning "Undefined variable $headers_on"** on the Hardening tab (introduced in 1.13.2). The same mistake made the CSP scanner always say "Not in use yet", even when security headers were on.
+- A PHP 8.4 deprecation notice in the rate limiter.
+
 ## [1.13.2] - 2026-10-13
 ### Changed
 - **Hardening tab is simpler.** A status line above the Content-Security-Policy controls says in one sentence what visitors actually receive: off, test mode (nothing blocked), active, or not sent because Enable Security Headers is off. The numbered steps (scan, leave test mode on for a few days, then enforce) now sit above the controls. The scanner and the Blocked sources list are one panel, shown only when the policy is on.
