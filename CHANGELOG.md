@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.12.2] - 2026-10-13
+### Fixed
+- **Plugin stopped itself on a single install** ("ADC Core Security is installed twice" with only one copy present): the duplicate-copy guard added in 1.12.1 also tested for the `adc_security()` function, which PHP defines while compiling the file, so the check was always true and the plugin, including its admin menu, never loaded. The guard now checks only for the plugin constant, the function is declared conditionally, and the notice names both the skipped and the running copy. If you installed 1.12.1, update to 1.12.2.
+
 ## [1.12.1] - 2026-10-13
 ### Security
 - **Client IP behind a proxy could be spoofed**: with a trusted proxy configured, the plugin read the first address in `X-Forwarded-For`, which the visitor controls, so lockouts and rate limits could be dodged. The header is now read from the right, skipping trusted proxies.
