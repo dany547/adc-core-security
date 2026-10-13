@@ -79,11 +79,11 @@ jQuery(document).ready(function ($) {
         });
     }
 
-    // Mirror of build_generated(): defaults, then presets, then extras, then removals.
+    // Live preview of the source list only. The header that is really sent is built on the
+    // server ("Header sent right now") and is the one that counts once you save.
     function buildCspPreview() {
         var directives = cspData.directives || [];
         var defaults = cspData.defaults || {};
-        var presets = cspData.presets || {};
         var map = {};
 
         function addSources(dir, sources) {
@@ -101,15 +101,10 @@ jQuery(document).ready(function ($) {
             addSources(dir, defaults[dir]);
         });
 
-        $('input[name="adc_security_options[csp_presets][]"]:checked').each(function () {
-            var preset = presets[this.value];
-            if (!preset) {
-                return;
-            }
-            Object.keys(preset.directives).forEach(function (dir) {
-                addSources(dir, preset.directives[dir]);
-            });
-        });
+        // Same order as build_generated(): the compatibility flag comes right after the defaults.
+        if ($('input[name="adc_security_options[csp_dynamic_scripts_compatibility]"]:checked').length) {
+            addSources('script-src', ["'unsafe-eval'"]);
+        }
 
         directives.forEach(function (dir) {
             var extra = $('textarea[name="adc_security_options[csp_extra_sources][' + dir + ']"]').val() || '';
@@ -151,8 +146,8 @@ jQuery(document).ready(function ($) {
             $panel.toggle(allowed.indexOf(optionValue($panel.attr('data-adc-when'))) !== -1);
         });
 
-        if ($('#adc-csp-preview').length) {
-            $('#adc-csp-preview').text(buildCspPreview());
+        if ($('#adc-csp-preview-live').length) {
+            $('#adc-csp-preview-live').text(buildCspPreview());
         }
     }
 

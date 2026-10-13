@@ -276,6 +276,15 @@ class ADC_Security_Core {
 			}
 		}
 
+		// 1.13.2: service presets are expanded once into csp_extra_sources, so the
+		// stored list is the single source of truth. The generated policy is unchanged.
+		if ( version_compare( (string) get_option( 'adc_security_version', '0.0.0' ), '1.13.2', '<' ) && class_exists( 'ADC_Security_Csp_Scanner' ) && ! empty( $options['csp_presets'] ) && is_array( $options['csp_presets'] ) ) {
+			$extra_sources = isset( $options['csp_extra_sources'] ) && is_array( $options['csp_extra_sources'] ) ? $options['csp_extra_sources'] : array();
+			$options['csp_extra_sources'] = ADC_Security_Csp_Scanner::expand_presets( $options['csp_presets'], $extra_sources );
+			$options['csp_presets']       = array();
+			$changed = true;
+		}
+
         if ( $changed ) {
             update_option( 'adc_security_options', $options, false );
         }

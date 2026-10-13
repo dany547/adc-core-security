@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.2] - 2026-10-13
+### Changed
+- **Hardening tab is simpler.** A status line above the Content-Security-Policy controls says in one sentence what visitors actually receive: off, test mode (nothing blocked), active, or not sent because Enable Security Headers is off. The numbered steps (scan, leave test mode on for a few days, then enforce) now sit above the controls. The scanner and the Blocked sources list are one panel, shown only when the policy is on.
+- **Test mode (Report-Only) is ticked by default** when you first turn Content-Security-Policy on, so a new policy cannot break the site by surprise.
+- **"Header sent right now"** shows the exact header built by the server, including `report-uri` and `unsafe-eval` when they apply, instead of a separate approximation.
+- **The `unsafe-eval` option sits with the CSP settings** and says plainly that it weakens protection. The ready-made service checkboxes are gone from the screen; sources you had selected are added to your allowed sources automatically on upgrade and the generated policy stays identical.
+- Less-used header options (the on/off list, Referrer-Policy, Permissions-Policy and HSTS) are in a collapsed **Advanced header options** block. `unsafe-url` is no longer offered for Referrer-Policy (a saved value is kept). The empty Firewall rules section is removed from Hardening.
+- Hints that pointed to panels "below" now point to where they are.
+
+### Fixed
+- **Scanner extra pages**: type `/contact/` or a page address; the plugin works out the domain itself, also when your site is opened with or without `www`, and tells you by name which line it skipped. At most 3 pages.
+- Addresses already allowed by the default `https:` source (images and network requests) are shown as already allowed instead of as new choices.
+
 ## [1.13.1] - 2026-10-13
 ### Added
 - **CSP site scanner**: the Hardening tab can now scan your public pages as a visitor (home page, latest posts and pages, privacy policy and, with WooCommerce, shop, cart, checkout and account, plus up to three extra pages you add) and list every outside service they load, grouped by what it needs (scripts, stylesheets, images, fonts, network requests, frames). Tick the ones you trust and press **Allow selected**; nothing is allowed by default. Your own subdomains are listed separately with their exact host, and anything loaded over plain `http://` or from a bare IP address is flagged and cannot be ticked.

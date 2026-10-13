@@ -312,9 +312,82 @@
     color: #8a5d00;
 }
 
-.adc-csp-reports {
+.adc-csp-status {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    max-width: 760px;
+    border-left: 4px solid #787c82;
+    background: #f6f7f7;
+}
+
+.adc-csp-status-active {
+    border-left-color: #1d6b2c;
+    background: #edfaef;
+}
+
+.adc-csp-status-test {
+    border-left-color: #dba617;
+    background: #fcf9e8;
+}
+
+.adc-csp-status-not-sent {
+    border-left-color: #d63638;
+    background: #fcf0f1;
+}
+
+.adc-csp-steps-wrap {
+    margin: 0 0 16px;
+    max-width: 760px;
+}
+
+.adc-csp-steps {
+    margin: 0 0 0 20px;
+    list-style: decimal;
+}
+
+.adc-csp-steps li {
+    margin-bottom: 4px;
+}
+
+.adc-csp-sent {
+    margin: 16px 0 12px;
+    max-width: 760px;
+}
+
+.adc-csp-compat {
+    border-bottom: 0;
+}
+
+.adc-advanced {
+    margin: 16px 0 8px;
+    max-width: 760px;
+}
+
+.adc-advanced > summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 4px 0;
+}
+
+.adc-advanced-part {
+    margin: 12px 0 16px 0;
+    padding-top: 10px;
+    border-top: 1px solid #f0f0f1;
+}
+
+.adc-csp-scanner-off {
     max-width: 900px;
+}
+
+.adc-csp-blocked {
+    margin-top: 24px;
+    padding-top: 12px;
+    border-top: 1px solid #dcdcde;
     overflow-x: auto;
+}
+
+.adc-csp-empty {
+    color: #50575e;
 }
 
 .adc-csp-table {
@@ -388,16 +461,6 @@
     border-top: 1px solid #dcdcde;
 }
 
-.adc-csp-presets {
-    margin: 12px 0;
-}
-
-.adc-csp-presets > summary {
-    cursor: pointer;
-    font-weight: 600;
-    margin-bottom: 8px;
-}
-
 .adc-csp-existing details,
 .adc-csp-pages,
 .adc-csp-errors {
@@ -409,7 +472,8 @@
         margin-left: 12px;
     }
 
-    .adc-csp-scanner .adc-csp-table {
+    .adc-csp-scanner .adc-csp-table,
+    .adc-csp-blocked .adc-csp-table {
         display: block;
         overflow-x: auto;
     }

@@ -345,17 +345,41 @@ class ADC_Security_Hardening {
 	 * Emit the Content-Security-Policy (or Report-Only) header for the configured mode.
 	 */
 	private function send_csp_header() {
-		$mode = self::get_csp_mode( $this->options );
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+		$header      = self::get_csp_header( $this->options, is_admin(), $request_uri, $this->csp );
+
+		if ( null !== $header ) {
+			header( $header['name'] . ': ' . $header['value'] );
+		}
+	}
+
+	/**
+	 * Build the Content-Security-Policy header for a request.
+	 *
+	 * The header emitter and the admin "Header sent right now" preview both call this,
+	 * so the preview always shows the header that is actually sent. Returns null when
+	 * no CSP header is sent (mode off).
+	 *
+	 * @param mixed                   $options     Plugin options.
+	 * @param bool                    $is_admin    Whether the request is an admin request.
+	 * @param string                  $request_uri Request path, used for the dynamic-script decision.
+	 * @param ADC_Security_Csp_Policy $csp         Optional policy builder.
+	 * @return array{name: string, value: string}|null
+	 */
+	public static function get_csp_header( $options, $is_admin, $request_uri, $csp = null ) {
+		$options = is_array( $options ) ? $options : array();
+		$mode    = self::get_csp_mode( $options );
 		if ( 'off' === $mode ) {
-			return;
+			return null;
 		}
 
-		$report_only = ! empty( $this->options['csp_report_only'] );
+		$csp         = $csp instanceof ADC_Security_Csp_Policy ? $csp : new ADC_Security_Csp_Policy();
+		$report_only = ! empty( $options['csp_report_only'] );
 		$report_uri  = $report_only && class_exists( 'ADC_Security_Csp_Reports' ) ? ADC_Security_Csp_Reports::report_uri() : '';
 		$policy      = '';
 
 		if ( 'custom' === $mode ) {
-			$custom = ADC_Security_Csp_Policy::sanitize_policy( isset( $this->options['security_headers_csp'] ) ? $this->options['security_headers_csp'] : '' );
+			$custom = ADC_Security_Csp_Policy::sanitize_policy( isset( $options['security_headers_csp'] ) ? $options['security_headers_csp'] : '' );
 			$policy = $custom['value'];
 			if ( '' !== $policy && '' !== $report_uri && false === stripos( $policy, 'report-uri' ) ) {
 				$policy = rtrim( $policy, '; ' ) . '; report-uri ' . $report_uri . ';';
@@ -364,34 +388,36 @@ class ADC_Security_Hardening {
 
 		// Standard mode, or a custom mode with no usable text: generated policy.
 		if ( '' === $policy ) {
-			$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-			$allow_dynamic_scripts = $this->csp->allows_dynamic_scripts(
-				! empty( $this->options['csp_dynamic_scripts_compatibility'] ),
-				is_admin(),
+			$allow_dynamic_scripts = $csp->allows_dynamic_scripts(
+				! empty( $options['csp_dynamic_scripts_compatibility'] ),
+				$is_admin,
 				$request_uri
 			);
 
-			$policy = $this->csp->build_generated(
-				$this->get_option_list( 'csp_presets' ),
-				$this->get_option_list( 'csp_extra_sources' ),
-				$this->get_option_list( 'csp_removed_defaults' ),
+			$policy = $csp->build_generated(
+				self::read_option_list( $options, 'csp_presets' ),
+				self::read_option_list( $options, 'csp_extra_sources' ),
+				self::read_option_list( $options, 'csp_removed_defaults' ),
 				$allow_dynamic_scripts,
 				$report_uri
 			);
 		}
 
-		$header = $report_only ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
-		header( $header . ': ' . trim( preg_replace( '/[\r\n]+/', ' ', $policy ) ) );
+		return array(
+			'name'  => $report_only ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy',
+			'value' => trim( preg_replace( '/[\r\n]+/', ' ', $policy ) ),
+		);
 	}
 
 	/**
 	 * Read an array-valued option, tolerating missing or malformed data.
 	 *
-	 * @param string $key Option key.
+	 * @param array  $options Plugin options.
+	 * @param string $key     Option key.
 	 * @return array
 	 */
-	private function get_option_list( $key ) {
-		return isset( $this->options[ $key ] ) && is_array( $this->options[ $key ] ) ? $this->options[ $key ] : array();
+	private static function read_option_list( $options, $key ) {
+		return isset( $options[ $key ] ) && is_array( $options[ $key ] ) ? $options[ $key ] : array();
 	}
 
 	/**

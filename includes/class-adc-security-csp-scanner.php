@@ -20,7 +20,8 @@ class ADC_Security_Csp_Scanner {
 
 	const MAX_INPUT_BYTES  = 2097152;
 	const MAX_URL_LENGTH   = 2048;
-	const MAX_EXTRA_URLS   = 5;
+	const MAX_EXTRA_URLS   = 3;
+	const MAX_EXTRA_PATH   = 500;
 	const MAX_STORED_PAGES = 10;
 	const MAX_EXISTING_CSP = 8192;
 
@@ -153,14 +154,22 @@ class ADC_Security_Csp_Scanner {
 				$candidates = array_merge( $candidates, $defaults[ $directive ] );
 			}
 
-			$allowed = false;
+			$allowed    = false;
+			$allowed_by = '';
 			foreach ( $candidates as $candidate ) {
 				if ( is_string( $candidate ) && self::canonical( $candidate ) === $source ) {
-					$allowed = true;
+					$allowed    = true;
+					$allowed_by = 'list';
 					break;
 				}
 			}
-			$found[ $i ]['allowed'] = $allowed;
+			// The bare scheme 'https:' (in the default img-src and connect-src) allows every https:// origin.
+			if ( ! $allowed && 0 === strpos( $source, 'https://' ) && in_array( 'https:', array_filter( $candidates, 'is_string' ), true ) ) {
+				$allowed    = true;
+				$allowed_by = 'https';
+			}
+			$found[ $i ]['allowed']    = $allowed;
+			$found[ $i ]['allowed_by'] = $allowed_by;
 		}
 
 		return $found;
@@ -261,9 +270,136 @@ class ADC_Security_Csp_Scanner {
 	}
 
 	/**
+	 * Turn a page address typed by the administrator into an absolute URL on the site.
+	 *
+	 * Accepts "/path", "path", "www.site.ro/path", "//site.ro/path" and full http(s) URLs.
+	 * The result always uses the scheme, host and port of $home_url, so the www and
+	 * http/https variant of the home URL is used. Returns '' when the input is not a
+	 * page of the same site, uses another scheme, carries credentials, or is too long.
+	 * Fragments are dropped.
+	 *
+	 * @param string $raw      Raw input.
+	 * @param string $home_url Home URL, e.g. "https://www.example.com/".
+	 * @return string Absolute URL, or ''.
+	 */
+	public static function normalize_extra_url( string $raw, string $home_url ): string {
+		$raw = trim( $raw );
+		if ( '' === $raw || strlen( $raw ) > self::MAX_URL_LENGTH || preg_match( '/[\x00-\x20\x7F]/', $raw ) ) {
+			return '';
+		}
+
+		$home = parse_url( $home_url );
+		if ( ! is_array( $home ) || empty( $home['scheme'] ) || empty( $home['host'] ) ) {
+			return '';
+		}
+		$home_scheme = strtolower( (string) $home['scheme'] );
+		if ( ! in_array( $home_scheme, array( 'http', 'https' ), true ) ) {
+			return '';
+		}
+		$home_host = strtolower( rtrim( (string) $home['host'], '.' ) );
+		$home_port = isset( $home['port'] ) ? (int) $home['port'] : 0;
+		$origin    = $home_scheme . '://' . $home_host . ( $home_port ? ':' . $home_port : '' );
+
+		if ( 0 === strpos( $raw, '//' ) ) {
+			$candidate = 'https:' . $raw;
+		} elseif ( preg_match( '#^[a-z][a-z0-9+.\-]*://#i', $raw ) ) {
+			$candidate = $raw;
+		} elseif ( '/' === $raw[0] ) {
+			$candidate = $origin . $raw;
+		} elseif ( preg_match( '#^[a-z][a-z0-9+.\-]*:#i', $raw ) && ! preg_match( '#^[a-z0-9-]+(?:\.[a-z0-9-]+)+:\d+(?:[/?\#]|$)#i', $raw ) ) {
+			// javascript:, data:, mailto: and other schemes without an authority.
+			return '';
+		} elseif ( preg_match( '#^[a-z0-9-]+(?:\.[a-z0-9-]+)+(?::\d+)?(?:[/?\#]|$)#i', $raw ) ) {
+			$candidate = 'https://' . $raw;
+		} else {
+			$candidate = $origin . '/' . $raw;
+		}
+
+		$parts = parse_url( $candidate );
+		if ( ! is_array( $parts ) || empty( $parts['scheme'] ) || empty( $parts['host'] ) ) {
+			return '';
+		}
+		$scheme = strtolower( (string) $parts['scheme'] );
+		if ( ! in_array( $scheme, array( 'http', 'https' ), true ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+			return '';
+		}
+
+		$host = strtolower( rtrim( (string) $parts['host'], '.' ) );
+		if ( self::strip_www( $host ) !== self::strip_www( $home_host ) ) {
+			return '';
+		}
+
+		if ( isset( $parts['port'] ) ) {
+			$port    = (int) $parts['port'];
+			$default = 'https' === $scheme ? 443 : 80;
+			if ( $port !== $default && $port !== $home_port ) {
+				return '';
+			}
+		}
+
+		$path = isset( $parts['path'] ) && '' !== $parts['path'] ? $parts['path'] : '/';
+		$path_query = $path . ( isset( $parts['query'] ) && '' !== $parts['query'] ? '?' . $parts['query'] : '' );
+		if ( strlen( $path_query ) > self::MAX_EXTRA_PATH || preg_match( '/[<>"\\`]/', $path_query ) ) {
+			return '';
+		}
+
+		return $origin . $path_query;
+	}
+
+	/**
+	 * Merge service presets and administrator extra sources into one directive map.
+	 *
+	 * Produces the same policy as build_generated( $preset_keys, $extra_sources, ... ) when
+	 * passed to build_generated( array(), result, ... ). Used once on upgrade to move
+	 * presets into csp_extra_sources. Pure PHP.
+	 *
+	 * @param array $preset_keys   Preset keys from ADC_Security_Csp_Policy::get_service_presets().
+	 * @param array $extra_sources Directive => string[].
+	 * @return array<string, string[]> Directive => sanitised sources.
+	 */
+	public static function expand_presets( array $preset_keys, array $extra_sources ): array {
+		$catalog   = ADC_Security_Csp_Policy::get_service_presets();
+		$supported = ADC_Security_Csp_Policy::get_directives();
+		$merged    = array();
+
+		$add = static function ( array $map, $directive, array $sources ) {
+			if ( ! isset( $map[ $directive ] ) ) {
+				$map[ $directive ] = array();
+			}
+			foreach ( $sources as $source ) {
+				$valid = ADC_Security_Csp_Policy::sanitize_source( $source );
+				if ( '' !== $valid && ! in_array( $valid, $map[ $directive ], true ) ) {
+					$map[ $directive ][] = $valid;
+				}
+			}
+			return $map;
+		};
+
+		foreach ( $preset_keys as $key ) {
+			if ( ! is_string( $key ) || ! isset( $catalog[ $key ] ) ) {
+				continue;
+			}
+			foreach ( $catalog[ $key ]['directives'] as $directive => $sources ) {
+				if ( in_array( $directive, $supported, true ) ) {
+					$merged = $add( $merged, (string) $directive, $sources );
+				}
+			}
+		}
+
+		foreach ( $extra_sources as $directive => $sources ) {
+			if ( ! is_string( $directive ) || ! in_array( $directive, $supported, true ) || ! is_array( $sources ) ) {
+				continue;
+			}
+			$merged = $add( $merged, $directive, $sources );
+		}
+
+		return $merged;
+	}
+
+	/**
 	 * Scan the site's public pages as an anonymous visitor and store the result.
 	 *
-	 * @param array $extra_urls Up to 5 extra URLs on this site.
+	 * @param array $extra_urls Up to MAX_EXTRA_URLS extra page addresses on this site.
 	 * @return array|WP_Error
 	 */
 	public function scan( array $extra_urls = array() ) {
@@ -276,13 +412,13 @@ class ADC_Security_Csp_Scanner {
 
 		$extra_urls = array_slice( array_values( $extra_urls ), 0, self::MAX_EXTRA_URLS );
 		foreach ( $extra_urls as $raw ) {
-			$url    = is_string( $raw ) ? esc_url_raw( trim( $raw ) ) : '';
-			$scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
-			$ehost  = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
-			if ( '' === $url || ! in_array( $scheme, array( 'http', 'https' ), true ) || $ehost !== $host ) {
-				if ( is_string( $raw ) && '' !== $raw ) {
-					$errors[ $raw ] = __( 'Extra URLs must be http or https addresses on this site.', 'adc-security' );
-				}
+			if ( ! is_string( $raw ) || '' === trim( $raw ) ) {
+				continue;
+			}
+			$url = self::normalize_extra_url( $raw, $home );
+			if ( '' === $url ) {
+				/* translators: 1: rejected input, 2: site host. */
+				$errors[ $raw ] = sprintf( __( '"%1$s" is not a page of %2$s, so it was skipped.', 'adc-security' ), $raw, $host );
 				continue;
 			}
 			if ( ! in_array( $url, $targets, true ) ) {

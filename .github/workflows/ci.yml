@@ -139,6 +139,9 @@ jobs:
       - name: Test CSP scanner
         run: php tests/test-csp-scanner.php
 
+      - name: Test CSP preset migration
+        run: php tests/test-csp-migration.php
+
       - name: Test security score
         run: php tests/test-security-score.php
 

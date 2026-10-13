@@ -362,13 +362,6 @@ class ADC_Security_Settings {
 		);
 
 		add_settings_section(
-			'adc_security_firewall_moved_section',
-			'Firewall rules',
-			array( $this, 'render_firewall_moved_section_intro' ),
-			'adc_security_hardening'
-		);
-
-		add_settings_section(
 			'adc_security_vulnerability_feed_section',
 			'Known Vulnerability Feed',
 			array( $this, 'render_vulnerability_feed_section_intro' ),
@@ -402,16 +395,7 @@ class ADC_Security_Settings {
 			'adc_security_headers_section',
 			array(
 				'label_for' => 'security_headers',
-				'description' => 'Adds the following HTTP security headers to protect your site:<br>
-                <ul>
-                    <li><strong>X-Content-Type-Options:</strong> nosniff (Prevents MIME-type sniffing)</li>
-                    <li><strong>X-Frame-Options:</strong> SAMEORIGIN (Prevents clickjacking)</li>
-                    <li><strong>X-XSS-Protection:</strong> 1; mode=block (Enables XSS filtering)</li>
-                    <li><strong>Referrer-Policy:</strong> strict-origin-when-cross-origin (Controls referrer info)</li>
-                    <li><strong>Content-Security-Policy:</strong> Optional and configurable below</li>
-                    <li><strong>Permissions-Policy:</strong> Disables sensitive features (Camera, Mic, etc.)</li>
-                    <li><strong>Strict-Transport-Security:</strong> Sent only when HTTPS is active (Enforces HTTPS)</li>
-                </ul>',
+				'description' => 'Adds the recommended HTTP security headers. Details are in Advanced.',
 			)
 		);
 
@@ -423,67 +407,18 @@ class ADC_Security_Settings {
 			'adc_security_headers_section',
 			array(
 				'class'       => 'adc-field-csp',
-				'description' => 'Recommended steps: 1) Scan your site in the CSP site scanner above and allow the services you recognise. 2) Turn on Report-Only below and check the Blocked sources list. 3) Turn Report-Only off once that list is clean. Standard builds the policy from the scan results and the options below and works for most sites. Custom sends exactly the text you write. Off sends no CSP header. Changes apply when you save, and the header is only sent when Enable Security Headers is on.',
+				'description' => 'Changes apply when you save. The header is only sent when Enable Security Headers is on.',
 			)
 		);
 
 		add_settings_field(
-			'security_header_toggles',
-			'Fine-tune Security Headers',
-			array( $this, 'render_security_header_toggles_field' ),
+			'adc_advanced_header_options',
+			'',
+			array( $this, 'render_advanced_header_options' ),
 			'adc_security_hardening',
 			'adc_security_headers_section',
 			array(
-				'label_for'   => 'security_header_toggles',
-				'description' => 'Choose which fixed headers are emitted when Enable Security Headers is active. Content-Security-Policy is configured separately above.',
-			)
-		);
-
-		add_settings_field(
-			'referrer_policy_value',
-			'Referrer-Policy value',
-			array( $this, 'render_referrer_policy_field' ),
-			'adc_security_hardening',
-			'adc_security_headers_section',
-			array(
-				'class'       => 'adc-field-referrer_policy',
-				'description' => 'How much of the page address is sent to other sites when visitors follow a link.',
-			)
-		);
-
-		add_settings_field(
-			'permissions_policy_mode',
-			'Permissions-Policy',
-			array( $this, 'render_permissions_policy_field' ),
-			'adc_security_hardening',
-			'adc_security_headers_section',
-			array(
-				'class'       => 'adc-field-permissions_policy',
-				'description' => 'Controls which browser features (camera, microphone, location, payment, USB) this site and embedded content may use.',
-			)
-		);
-
-		add_settings_field(
-			'hsts_max_age',
-			'Strict-Transport-Security',
-			array( $this, 'render_hsts_field' ),
-			'adc_security_hardening',
-			'adc_security_headers_section',
-			array(
-				'class'       => 'adc-field-hsts',
-				'description' => 'Tells browsers to use HTTPS for this site. Sent only when the request is already HTTPS.',
-			)
-		);
-
-		add_settings_field(
-			'csp_dynamic_scripts_compatibility',
-			'Frontend Dynamic Script Compatibility',
-			array( $this, 'render_checkbox_field' ),
-			'adc_security_hardening',
-			'adc_security_headers_section',
-			array(
-				'label_for'   => 'csp_dynamic_scripts_compatibility',
-				'description' => 'Allows JavaScript template compilation required by some WooCommerce and theme scripts on frontend pages only. This adds <code>unsafe-eval</code> to the default CSP and remains disabled by default. A custom CSP value overrides this setting.',
+				'class' => 'adc-field-advanced-headers',
 			)
 		);
 
@@ -1103,7 +1038,6 @@ class ADC_Security_Settings {
         wp_localize_script( 'adc-admin-settings', 'adcSecurityCsp', array(
             'directives' => ADC_Security_Csp_Policy::get_directives(),
             'defaults'   => ADC_Security_Csp_Policy::get_default_sources(),
-            'presets'    => ADC_Security_Csp_Policy::get_service_presets(),
         ) );
     }
 
@@ -1503,8 +1437,8 @@ class ADC_Security_Settings {
 				// Action panels have their own forms and are not saved by the button below,
 				// so they sit above the settings form and Save stays the last thing on the page.
 				if ( 'hardening' === $active_tab ) {
+					// The scanner panel also holds the blocked-sources list; both appear only when CSP is on.
 					$this->render_csp_scanner_panel();
-					$this->render_csp_reports_panel();
 					?>
 					<details class="adc-tools">
 						<summary><strong><?php esc_html_e( 'Server tools: .htaccess and security keys', 'adc-security' ); ?></strong></summary>
@@ -1643,8 +1577,9 @@ class ADC_Security_Settings {
 			$new_input['csp_mode'] = in_array( $input['csp_mode'], array( 'off', 'standard', 'custom' ), true ) ? $input['csp_mode'] : 'off';
 		}
 		if ( isset( $input['csp_presets'] ) ) {
-			$chosen = is_array( $input['csp_presets'] ) ? array_filter( $input['csp_presets'], 'is_string' ) : array();
-			$new_input['csp_presets'] = array_values( array_intersect( array_keys( ADC_Security_Csp_Policy::get_service_presets() ), $chosen ) );
+			// Presets are no longer offered in the UI. The core upgrade expands saved presets
+			// into csp_extra_sources, so a posted preset list is simply emptied.
+			$new_input['csp_presets'] = array();
 		}
 		if ( isset( $input['csp_extra_sources'] ) && is_array( $input['csp_extra_sources'] ) ) {
 			$extra = array();
@@ -1818,15 +1753,8 @@ class ADC_Security_Settings {
 				<br><span class="description adc-checkbox-description"><?php echo esc_html( $definition['description'] ); ?></span>
 			</label>
 		<?php endforeach; ?>
-		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?> Rules are saved first; they are not active until you explicitly apply them below.</p>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?> Rules are saved first; they are not active until you explicitly apply them in Server tools above.</p>
 		<?php
-	}
-
-	/**
-	 * Note pointing to the Firewall tab, which replaced the virtual patching rules here.
-	 */
-	public function render_firewall_moved_section_intro() {
-		echo '<p>Rules that block known attacks on WordPress core now live on the <a href="' . esc_url( admin_url( 'admin.php?page=adc-security&tab=firewall' ) ) . '">Firewall tab</a>.</p>';
 	}
 
 	/**
@@ -1868,6 +1796,27 @@ class ADC_Security_Settings {
 	}
 
 	/**
+	 * Plain-language state of the Content-Security-Policy, for the status line.
+	 *
+	 * @param array $options Saved options.
+	 * @return array{state: string, text: string}
+	 */
+	private function get_csp_status( $options ) {
+		$mode = ADC_Security_Hardening::get_csp_mode( $options );
+
+		if ( 'off' === $mode ) {
+			return array( 'state' => 'off', 'text' => 'CSP: off - no policy is sent.' );
+		}
+		if ( empty( $options['security_headers'] ) ) {
+			return array( 'state' => 'not-sent', 'text' => 'CSP: not sent - turn on Enable Security Headers first.' );
+		}
+		if ( ! empty( $options['csp_report_only'] ) ) {
+			return array( 'state' => 'test', 'text' => 'CSP: test mode - nothing is blocked, violations are only recorded (Report-Only).' );
+		}
+		return array( 'state' => 'active', 'text' => 'CSP: active - the policy below is enforced.' );
+	}
+
+	/**
 	 * Render the Content-Security-Policy mode selector and its panels.
 	 *
 	 * Every panel is submitted even when hidden, so the form works without JavaScript.
@@ -1876,49 +1825,53 @@ class ADC_Security_Settings {
 	 */
 	public function render_csp_field( $args ) {
 		$options     = get_option( self::OPTION_NAME, array() );
+		$options     = is_array( $options ) ? $options : array();
 		$mode        = ADC_Security_Hardening::get_csp_mode( $options );
 		$custom      = isset( $options['security_headers_csp'] ) && is_string( $options['security_headers_csp'] ) ? $options['security_headers_csp'] : '';
-		$presets     = $this->get_option_array( $options, 'csp_presets' );
 		$extra       = $this->get_option_array( $options, 'csp_extra_sources' );
 		$removed     = $this->get_option_array( $options, 'csp_removed_defaults' );
-		$report_only = ! empty( $options['csp_report_only'] );
+		$dynamic     = ! empty( $options['csp_dynamic_scripts_compatibility'] );
+		// Report-Only is ticked while the mode is Off, so switching to Standard or Custom starts in test mode.
+		$report_only = ! empty( $options['csp_report_only'] ) || 'off' === $mode;
 		$name        = self::OPTION_NAME . '[csp_mode]';
 		$modes       = array(
 			'off'      => array( 'Off', 'Do not send a Content-Security-Policy header.' ),
-			'standard' => array( 'Standard (recommended)', 'Generated from the services and sources below.' ),
-			'custom'   => array( 'Custom', 'Send exactly the policy text entered below.' ),
+			'standard' => array( 'Standard (recommended)', 'Generated from the services found by the scanner and the sources under Advanced.' ),
+			'custom'   => array( 'Custom', 'For experts: you write the whole policy yourself; scanner results are not applied automatically in this mode.' ),
 		);
 		$directives  = ADC_Security_Csp_Policy::get_directives();
 		$defaults    = ADC_Security_Csp_Policy::get_default_sources();
-		$catalog     = ADC_Security_Csp_Policy::get_service_presets();
 		$warnings    = '' !== trim( $custom ) ? ADC_Security_Csp_Policy::detect_warnings( $custom ) : array();
+		$status      = $this->get_csp_status( $options );
+		$sent        = ! empty( $options['security_headers'] ) ? ADC_Security_Hardening::get_csp_header( $options, false, '/' ) : null;
 		?>
+		<p class="adc-csp-status adc-csp-status-<?php echo esc_attr( $status['state'] ); ?>" role="status" aria-live="polite"><?php echo esc_html( $status['text'] ); ?></p>
+
+		<div class="adc-csp-steps-wrap">
+			<p class="adc-block-label"><strong>How to roll out a policy</strong></p>
+			<ol class="adc-csp-steps">
+				<li>Scan your site, tick the services you recognise, then press Allow selected.</li>
+				<li>Leave test mode (Report-Only) on for a few days.</li>
+				<li>When the Blocked sources list stays empty, untick Report-Only and save.</li>
+			</ol>
+		</div>
+
 		<fieldset class="adc-csp">
 			<legend class="screen-reader-text"><span>Content-Security-Policy mode</span></legend>
-			<?php foreach ( $modes as $value => $item ) : ?>
-				<label class="adc-radio-row">
-					<input type="radio" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" <?php checked( $mode, $value ); ?>>
-					<strong><?php echo esc_html( $item[0] ); ?></strong>
-					<span class="description adc-checkbox-description"><?php echo esc_html( $item[1] ); ?></span>
-				</label>
-			<?php endforeach; ?>
+			<label class="adc-radio-row">
+				<input type="radio" name="<?php echo esc_attr( $name ); ?>" value="off" <?php checked( $mode, 'off' ); ?>>
+				<strong><?php echo esc_html( $modes['off'][0] ); ?></strong>
+				<span class="description adc-checkbox-description"><?php echo esc_html( $modes['off'][1] ); ?></span>
+			</label>
+			<label class="adc-radio-row">
+				<input type="radio" name="<?php echo esc_attr( $name ); ?>" value="standard" <?php checked( $mode, 'standard' ); ?>>
+				<strong><?php echo esc_html( $modes['standard'][0] ); ?></strong>
+				<span class="description adc-checkbox-description"><?php echo esc_html( $modes['standard'][1] ); ?></span>
+			</label>
 
 			<div class="adc-csp-panel" data-adc-when="csp_mode" data-adc-values="standard">
-				<details class="adc-csp-presets"<?php echo ! empty( $presets ) ? ' open' : ''; ?>>
-					<summary>Optional: common services that load other scripts after the page loads (Google Tag Manager, Stripe, etc.)</summary>
-					<p class="description">The scanner above finds most services by itself. Use this list only for services that load more scripts later, which a scan cannot see. Tick a service to allow its sources.</p>
-					<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="">
-					<?php foreach ( $catalog as $key => $preset ) : ?>
-						<label class="adc-checkbox-row">
-							<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $presets, true ) ); ?>>
-							<strong><?php echo esc_html( $preset['label'] ); ?></strong>
-							<br><span class="description adc-checkbox-description"><?php echo esc_html( $preset['description'] ); ?></span>
-						</label>
-					<?php endforeach; ?>
-				</details>
-
-				<details class="adc-csp-advanced">
-					<summary>Advanced: sources per directive</summary>
+				<details class="adc-csp-advanced"<?php echo $dynamic ? ' open' : ''; ?>>
+					<summary>Advanced: sources per directive and script compatibility</summary>
 					<p class="description">Tick <em>Remove</em> to turn off a default source. Add your own domains in the box for a directive, separated by spaces, commas or new lines.</p>
 					<?php foreach ( $directives as $directive ) : ?>
 						<div class="adc-csp-directive">
@@ -1934,16 +1887,32 @@ class ADC_Security_Settings {
 							<textarea id="<?php echo esc_attr( 'adc-csp-extra-' . $directive ); ?>" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_extra_sources][' . $directive . ']' ); ?>" rows="2" class="large-text code"><?php echo esc_textarea( implode( "\n", $this->get_option_array( $extra, $directive ) ) ); ?></textarea>
 						</div>
 					<?php endforeach; ?>
+					<div class="adc-csp-directive adc-csp-compat">
+						<p class="adc-csp-directive-name"><strong>Script compatibility</strong></p>
+						<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_dynamic_scripts_compatibility]' ); ?>" value="0">
+						<label class="adc-checkbox-row" for="csp_dynamic_scripts_compatibility">
+							<input type="checkbox" id="csp_dynamic_scripts_compatibility" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_dynamic_scripts_compatibility]' ); ?>" value="1" <?php checked( $dynamic ); ?>>
+							<strong>Allow unsafe-eval on public pages - only if a WooCommerce or theme script stops working (weakens protection)</strong>
+							<br><span class="description adc-checkbox-description">Adds <code>unsafe-eval</code> to script sources on frontend pages only. A custom policy below overrides this setting.</span>
+						</label>
+					</div>
 				</details>
 
 				<div class="adc-csp-preview-wrap">
-					<p class="adc-block-label"><strong>Resulting policy (preview)</strong></p>
-					<pre class="adc-csp-preview" id="adc-csp-preview"><?php echo esc_html( ( new ADC_Security_Csp_Policy() )->build_generated( $presets, $extra, $removed ) ); ?></pre>
+					<p class="adc-block-label"><strong>Preview of your changes (final header is built when you save)</strong></p>
+					<pre class="adc-csp-preview" id="adc-csp-preview-live"></pre>
 				</div>
 			</div>
 
+			<label class="adc-radio-row">
+				<input type="radio" name="<?php echo esc_attr( $name ); ?>" value="custom" <?php checked( $mode, 'custom' ); ?>>
+				<strong><?php echo esc_html( $modes['custom'][0] ); ?></strong>
+				<span class="description adc-checkbox-description"><?php echo esc_html( $modes['custom'][1] ); ?></span>
+			</label>
+
 			<div class="adc-csp-panel" data-adc-when="csp_mode" data-adc-values="custom">
-				<textarea name="<?php echo esc_attr( self::OPTION_NAME . '[security_headers_csp]' ); ?>" rows="6" class="large-text code"><?php echo esc_textarea( $custom ); ?></textarea>
+				<label class="adc-block-label" for="adc-csp-custom">Your full policy</label>
+				<textarea id="adc-csp-custom" name="<?php echo esc_attr( self::OPTION_NAME . '[security_headers_csp]' ); ?>" rows="6" class="large-text code"><?php echo esc_textarea( $custom ); ?></textarea>
 				<p class="description">Directives separated by semicolons, for example <code>default-src 'self'; script-src 'self' https://example.com</code>. Sent as written, after removing invalid parts.</p>
 				<?php if ( ! empty( $warnings ) ) : ?>
 					<ul class="adc-csp-warnings">
@@ -1959,11 +1928,87 @@ class ADC_Security_Settings {
 				<label class="adc-checkbox-row">
 					<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_report_only]' ); ?>" value="1" <?php checked( $report_only ); ?>>
 					<strong>Report-Only (test without blocking)</strong>
-					<br><span class="description adc-checkbox-description">Browsers report what the policy would block instead of blocking it, and the reports appear under Blocked sources below. Use this after scanning, on any new policy, then turn it off once the list is clean.</span>
+					<br><span class="description adc-checkbox-description">Browsers report what the policy would block instead of blocking it, and the reports appear in the Blocked sources list above. Use this after scanning, on any new policy, then turn it off once the list is clean.</span>
 				</label>
 			</div>
 		</fieldset>
+
+		<div class="adc-csp-sent">
+			<p class="adc-block-label"><strong>Header sent right now</strong></p>
+			<?php if ( null !== $sent ) : ?>
+				<pre class="adc-csp-preview"><?php echo esc_html( $sent['name'] . ': ' . $sent['value'] ); ?></pre>
+			<?php else : ?>
+				<p class="description">No Content-Security-Policy header is sent right now.</p>
+			<?php endif; ?>
+		</div>
 		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
+		<?php
+	}
+
+	/**
+	 * Decide whether the advanced header options should start expanded.
+	 *
+	 * They open when any value differs from the defaults, so a changed setting is never hidden.
+	 *
+	 * @param array $options Saved options.
+	 * @return bool
+	 */
+	private function advanced_header_options_differ( $options ) {
+		$default_headers = array_values( array_diff( array_keys( ADC_Security_Hardening::get_security_header_definitions() ), array( 'csp' ) ) );
+		$selected        = isset( $options['security_header_toggles'] ) && is_array( $options['security_header_toggles'] ) ? array_values( $options['security_header_toggles'] ) : $default_headers;
+		sort( $selected );
+		sort( $default_headers );
+		if ( $selected !== $default_headers ) {
+			return true;
+		}
+
+		if ( isset( $options['referrer_policy_value'] ) && ADC_Security_Hardening::REFERRER_POLICY_DEFAULT !== $options['referrer_policy_value'] ) {
+			return true;
+		}
+
+		if ( isset( $options['permissions_policy_mode'] ) && 'custom' === $options['permissions_policy_mode'] ) {
+			return true;
+		}
+
+		$max_age    = isset( $options['hsts_max_age'] ) ? absint( $options['hsts_max_age'] ) : 31536000;
+		$subdomains = ! isset( $options['hsts_include_subdomains'] ) || ! empty( $options['hsts_include_subdomains'] );
+		return 31536000 !== $max_age || ! $subdomains || ! empty( $options['hsts_preload'] );
+	}
+
+	/**
+	 * Render the advanced header options: fine-tuning, Referrer-Policy, Permissions-Policy and HSTS.
+	 *
+	 * Each control keeps its own option key and sanitisation; they only share one collapsible block.
+	 *
+	 * @param array $args Field arguments (unused).
+	 */
+	public function render_advanced_header_options( $args ) {
+		$options = get_option( self::OPTION_NAME, array() );
+		$options = is_array( $options ) ? $options : array();
+		?>
+		<details class="adc-advanced"<?php echo $this->advanced_header_options_differ( $options ) ? ' open' : ''; ?>>
+			<summary>Advanced header options</summary>
+
+			<div class="adc-advanced-part">
+				<p class="adc-block-label"><strong>Fine-tune Security Headers</strong></p>
+				<?php $this->render_security_header_toggles_field( array( 'description' => 'Choose which fixed headers are emitted when Enable Security Headers is active. Content-Security-Policy is configured separately above.' ) ); ?>
+			</div>
+
+			<div class="adc-advanced-part adc-field-referrer_policy">
+				<p class="adc-block-label"><strong><label for="referrer_policy_value">Referrer-Policy value</label></strong></p>
+				<?php $this->render_referrer_policy_field( array( 'description' => 'How much of the page address is sent to other sites when visitors follow a link.' ) ); ?>
+			</div>
+
+			<div class="adc-advanced-part adc-field-permissions_policy">
+				<p class="adc-block-label"><strong>Permissions-Policy</strong></p>
+				<?php $this->render_permissions_policy_field( array( 'description' => 'Controls which browser features (camera, microphone, location, payment, USB) this site and embedded content may use.' ) ); ?>
+			</div>
+
+			<div class="adc-advanced-part adc-field-hsts">
+				<p class="adc-block-label"><strong>Strict-Transport-Security</strong></p>
+				<?php $this->render_hsts_field( array( 'description' => 'Tells browsers to use HTTPS for this site. Sent only when the request is already HTTPS.' ) ); ?>
+			</div>
+		</details>
 		<?php
 	}
 
@@ -1980,9 +2025,16 @@ class ADC_Security_Settings {
 			$value = ADC_Security_Hardening::REFERRER_POLICY_DEFAULT;
 		}
 		?>
-		<select name="<?php echo esc_attr( self::OPTION_NAME . '[referrer_policy_value]' ); ?>">
+		<select id="referrer_policy_value" name="<?php echo esc_attr( self::OPTION_NAME . '[referrer_policy_value]' ); ?>">
 			<?php foreach ( $choices as $token => $label ) : ?>
-				<option value="<?php echo esc_attr( $token ); ?>" <?php selected( $value, $token ); ?>><?php echo esc_html( $label ); ?></option>
+				<?php
+				// unsafe-url is no longer offered; it stays listed only while it is the saved value.
+				if ( 'unsafe-url' === $token && $value !== $token ) {
+					continue;
+				}
+				$text = 'unsafe-url' === $token ? $label . ' (current setting)' : $label;
+				?>
+				<option value="<?php echo esc_attr( $token ); ?>" <?php selected( $value, $token ); ?>><?php echo esc_html( $text ); ?></option>
 			<?php endforeach; ?>
 		</select>
 		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
@@ -2053,30 +2105,30 @@ class ADC_Security_Settings {
 	}
 
 	/**
-	 * Render the blocked-sources panel and its Allow / Clear actions.
+	 * Render the "Blocked for your visitors" sub-section of the scanner panel and its Allow / Clear actions.
 	 *
 	 * Rendered outside the options form because each button posts on its own.
 	 */
-	private function render_csp_reports_panel() {
+	private function render_csp_blocked_section() {
 		$core    = ADC_Security_Core::instance();
 		$reports = isset( $core->csp_reports ) && $core->csp_reports instanceof ADC_Security_Csp_Reports ? $core->csp_reports : null;
 		$rows    = $reports ? $reports->get_blocked_summary( 50 ) : array();
 		$action  = esc_url( admin_url( 'admin-post.php' ) );
 		?>
-		<div class="adc-admin-panel adc-csp-reports">
-			<h2 class="adc-no-top-margin">Content-Security-Policy: blocked sources</h2>
+		<div class="adc-csp-blocked" id="adc-csp-blocked">
+			<h3 id="adc-csp-blocked-title">Blocked for your visitors (test mode)</h3>
 			<p class="description">Sources that visitors' browsers reported in the last 30 days. Allowing a source adds it to that directive and saves the setting. Check each source first: an unexpected host can be a sign of injected script.</p>
 			<?php if ( empty( $rows ) ) : ?>
-				<p>No blocked sources have been reported.</p>
+				<p class="adc-csp-empty">Nothing blocked yet.</p>
 			<?php else : ?>
-				<table class="widefat striped adc-status-table adc-csp-table">
+				<table class="widefat striped adc-status-table adc-csp-table" aria-labelledby="adc-csp-blocked-title">
 					<thead>
 						<tr>
-							<th>Directive</th>
-							<th>Source</th>
-							<th>Reports</th>
-							<th>Last seen (UTC)</th>
-							<th><span class="screen-reader-text">Action</span></th>
+							<th scope="col">Directive</th>
+							<th scope="col">Source</th>
+							<th scope="col">Reports</th>
+							<th scope="col">Last seen (UTC)</th>
+							<th scope="col"><span class="screen-reader-text">Action</span></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -2247,20 +2299,22 @@ class ADC_Security_Settings {
 			$this->redirect_csp_notice();
 		}
 
-		// Extra pages: one per line, same site only, at most three.
+		// Other pages: one per line, same site only, up to MAX_EXTRA_URLS. Rejected lines are named in the notice.
 		$raw        = isset( $_POST['adc_csp_scan_extra'] ) && is_string( $_POST['adc_csp_scan_extra'] ) ? wp_unslash( $_POST['adc_csp_scan_extra'] ) : '';
-		$home_host  = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		$home       = home_url( '/' );
+		$max        = (int) ADC_Security_Csp_Scanner::MAX_EXTRA_URLS;
 		$extra_urls = array();
-		$rejected   = 0;
+		$rejected   = array();
+
 		foreach ( preg_split( '/\r\n|\r|\n/', $raw ) as $line ) {
 			$line = trim( $line );
 			if ( '' === $line ) {
 				continue;
 			}
-			$url  = esc_url_raw( $line, array( 'http', 'https' ) );
-			$host = '' !== $url ? strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) ) : '';
-			if ( '' === $host || $host !== $home_host || count( $extra_urls ) >= 3 ) {
-				$rejected++;
+			$url = count( $extra_urls ) < $max ? ADC_Security_Csp_Scanner::normalize_extra_url( $line, $home ) : '';
+			if ( '' === $url ) {
+				$name       = sanitize_text_field( $line );
+				$rejected[] = function_exists( 'mb_substr' ) ? mb_substr( $name, 0, 80 ) : substr( $name, 0, 80 );
 				continue;
 			}
 			$extra_urls[] = $url;
@@ -2275,8 +2329,8 @@ class ADC_Security_Settings {
 			$services = count( array_unique( array_column( $found, 'source' ) ) );
 			$pages    = isset( $result['urls'] ) && is_array( $result['urls'] ) ? count( $result['urls'] ) : 0;
 			$message  = sprintf( 'Scan finished: %d services found on %d pages', $services, $pages );
-			if ( $rejected > 0 ) {
-				$message .= sprintf( '. %d extra address(es) ignored: they must be pages on this site, up to 3.', $rejected );
+			if ( ! empty( $rejected ) ) {
+				$message .= sprintf( '. Not scanned (extra pages must be on this site, up to %d): %s', $max, implode( ', ', $rejected ) );
 			}
 			add_settings_error( self::OPTION_NAME, 'adc_security_csp_scanned', esc_html( $message ), 'updated' );
 		}
@@ -2358,28 +2412,41 @@ class ADC_Security_Settings {
 	}
 
 	/**
-	 * Render the CSP site scanner: a scan form, then the results grouped by directive.
+	 * Render the CSP site scanner: a scan form, the results grouped by directive, and the blocked sources.
 	 *
-	 * Rendered outside the options form because its buttons post on their own.
+	 * Shown only when Content-Security-Policy is not Off. Rendered outside the options form because
+	 * its buttons post on their own.
 	 */
 	private function render_csp_scanner_panel() {
-		$options  = get_option( self::OPTION_NAME, array() );
-		$options  = is_array( $options ) ? $options : array();
-		$mode     = ADC_Security_Hardening::get_csp_mode( $options );
-		$extra    = $this->get_option_array( $options, 'csp_extra_sources' );
-		$ready    = class_exists( 'ADC_Security_Csp_Scanner' );
-		$last     = $ready ? ADC_Security_Csp_Scanner::get_last_scan() : array();
-		$has_scan = ! empty( $last['time'] );
-		$action   = esc_url( admin_url( 'admin-post.php' ) );
-		$urls     = $has_scan && ! empty( $last['urls'] ) && is_array( $last['urls'] ) ? $last['urls'] : array();
-		$errors   = $has_scan && ! empty( $last['errors'] ) && is_array( $last['errors'] ) ? $last['errors'] : array();
-		$existing = $has_scan && isset( $last['existing_csp'] ) && is_string( $last['existing_csp'] ) ? trim( $last['existing_csp'] ) : '';
-		$found    = $has_scan && ! empty( $last['found'] ) && is_array( $last['found'] ) ? ADC_Security_Csp_Scanner::mark_allowed( $last['found'], $extra ) : array();
-		$hints    = ! empty( $found ) ? ADC_Security_Csp_Scanner::companion_hints( $found ) : array();
+		$options = get_option( self::OPTION_NAME, array() );
+		$options = is_array( $options ) ? $options : array();
+		$mode    = ADC_Security_Hardening::get_csp_mode( $options );
+
+		if ( 'off' === $mode ) {
+			?>
+			<div class="adc-admin-panel adc-csp-scanner-off">
+				<p>Turn on Content-Security-Policy (Standard mode) and save; the site scanner appears here.</p>
+			</div>
+			<?php
+			return;
+		}
+
+		$extra     = $this->get_option_array( $options, 'csp_extra_sources' );
+		$status    = $this->get_csp_status( $options );
+		$headers   = ! empty( $options['security_headers'] );
+		$ready     = class_exists( 'ADC_Security_Csp_Scanner' );
+		$last      = $ready ? ADC_Security_Csp_Scanner::get_last_scan() : array();
+		$has_scan  = ! empty( $last['time'] );
+		$action    = esc_url( admin_url( 'admin-post.php' ) );
+		$urls      = $has_scan && ! empty( $last['urls'] ) && is_array( $last['urls'] ) ? $last['urls'] : array();
+		$errors    = $has_scan && ! empty( $last['errors'] ) && is_array( $last['errors'] ) ? $last['errors'] : array();
+		$existing  = $has_scan && isset( $last['existing_csp'] ) && is_string( $last['existing_csp'] ) ? trim( $last['existing_csp'] ) : '';
+		$found     = $has_scan && ! empty( $last['found'] ) && is_array( $last['found'] ) ? ADC_Security_Csp_Scanner::mark_allowed( $last['found'], $extra ) : array();
+		$hints     = ! empty( $found ) ? ADC_Security_Csp_Scanner::companion_hints( $found ) : array();
 		$home_host = (string) wp_parse_url( home_url(), PHP_URL_HOST );
-		$labels   = $this->get_csp_directive_labels();
-		$fixed    = array( 'form-action', 'object-src' );
-		$index    = 0;
+		$labels    = $this->get_csp_directive_labels();
+		$fixed     = array( 'form-action', 'object-src' );
+		$index     = 0;
 
 		$groups = array();
 		foreach ( $found as $row ) {
@@ -2399,15 +2466,16 @@ class ADC_Security_Settings {
 		?>
 		<div class="adc-admin-panel adc-csp-scanner" id="adc-csp-scanner">
 			<h2 class="adc-no-top-margin" id="adc-csp-scanner-title">CSP site scanner</h2>
-			<p class="description">Scans the public pages of your site as a visitor and lists every outside service they load, so you can choose which ones your Content-Security-Policy should allow. It cannot see resources that a script loads later (for example Google Tag Manager loading other scripts) - use Report-Only mode and the Blocked sources list below for those.</p>
+			<p class="adc-csp-status adc-csp-status-<?php echo esc_attr( $status['state'] ); ?>" role="status" aria-live="polite"><?php echo esc_html( $status['text'] ); ?></p>
+			<p class="description">Scans the public pages of your site as a visitor and lists every outside service they load, so you can choose which ones your Content-Security-Policy should allow. It cannot see resources that a script loads later (for example Google Tag Manager loading other scripts) - use Report-Only mode and the Blocked for your visitors list below for those.</p>
 
 			<form method="post" action="<?php echo $action; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-csp-scan-form">
 				<?php wp_nonce_field( 'adc_security_csp_scan', 'adc_security_csp_scan_nonce' ); ?>
 				<input type="hidden" name="action" value="adc_security_csp_scan">
 				<p>
-					<label class="adc-block-label" for="adc-csp-scan-extra">Extra page URL to include (same site only)</label>
-					<textarea id="adc-csp-scan-extra" name="adc_csp_scan_extra" rows="3" class="large-text code" placeholder="<?php echo esc_attr( home_url( '/contact/' ) ); ?>"></textarea>
-					<span class="description">One address per line, up to 3. The scanner also picks a set of public pages automatically.</span>
+					<label class="adc-block-label" for="adc-csp-scan-extra">Other pages to check (optional)</label>
+					<textarea id="adc-csp-scan-extra" name="adc_csp_scan_extra" rows="3" class="large-text code" placeholder="/contact/" aria-describedby="adc-csp-scan-extra-help"></textarea>
+					<span class="description" id="adc-csp-scan-extra-help">Type the page address, for example /contact/ or /shop/. One per line, up to 3. The site address is added for you.</span>
 				</p>
 				<p><button type="submit" class="button button-primary" <?php disabled( ! $ready ); ?>>Scan my site</button></p>
 			</form>
@@ -2415,7 +2483,7 @@ class ADC_Security_Settings {
 			<?php if ( ! $has_scan ) : ?>
 				<p>No scan has run yet. Scan your site to see which outside services it loads.</p>
 			<?php else : ?>
-				<div class="adc-csp-scan-results" aria-live="polite">
+				<div class="adc-csp-scan-results">
 					<p><strong>Your site:</strong> <code><?php echo esc_html( $home_host ); ?></code> <span class="description">Hosts on this domain count as your own. Everything else is an outside service.</span></p>
 					<p><strong>Last scan:</strong> <time datetime="<?php echo esc_attr( gmdate( 'c', (int) $last['time'] ) ); ?>"><?php echo esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $last['time'] ) ); ?></time></p>
 
@@ -2456,12 +2524,16 @@ class ADC_Security_Settings {
 							<?php wp_nonce_field( 'adc_security_csp_apply_scan', 'adc_security_csp_apply_nonce' ); ?>
 							<input type="hidden" name="action" value="adc_security_csp_apply_scan">
 
-							<?php if ( 'standard' === $mode ) : ?>
-								<p class="description">Allowed sources are saved straight away and used in the policy while Content-Security-Policy mode is Standard.</p>
-							<?php else : ?>
+							<?php if ( ! $headers_on ) : ?>
 								<div class="adc-csp-mode-note">
-									<p><strong>These sources are not used right now.</strong> Your Content-Security-Policy mode is <strong><?php echo esc_html( ucfirst( $mode ) ); ?></strong>. Allowed sources only change the policy when the mode is Standard. Choose Standard under Content-Security-Policy below and save to use them.</p>
+									<p><strong>Not in use yet.</strong> Allowed sources are saved, but no policy is sent until you turn on Enable Security Headers and save.</p>
 								</div>
+							<?php elseif ( 'standard' !== $mode ) : ?>
+								<div class="adc-csp-mode-note">
+									<p><strong>Not in use right now.</strong> Your Content-Security-Policy mode is <strong><?php echo esc_html( ucfirst( $mode ) ); ?></strong>, so allowed sources do not change the policy. Choose Standard in the Content-Security-Policy section and save to use them.</p>
+								</div>
+							<?php else : ?>
+								<p class="description">Allowed sources are saved straight away and used in the policy.</p>
 							<?php endif; ?>
 
 							<p class="adc-csp-select-row" hidden>
@@ -2551,6 +2623,8 @@ class ADC_Security_Settings {
 					<button type="submit" class="button button-link-delete">Clear scan results</button>
 				</form>
 			<?php endif; ?>
+
+			<?php $this->render_csp_blocked_section(); ?>
 		</div>
 		<?php
 	}
@@ -2697,7 +2771,7 @@ class ADC_Security_Settings {
 				<?php if ( ! empty( $status['drift'] ) ) : ?>
 					<div class="notice notice-warning inline"><p>The managed .htaccess file changed outside ADC Security. Apply or revert will preserve external changes.</p></div>
 				<?php endif; ?>
-				<p class="description">Save the selected rules above, then apply them explicitly. Revert removes only the ADC Security marker block and preserves other server rules.</p>
+				<p class="description">Save the selected rules in Safe .htaccess Rules below, then apply them here. Revert removes only the ADC Security marker block and preserves other server rules.</p>
 				<div>
 					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="adc-inline-form">
 						<input type="hidden" name="action" value="adc_security_apply_htaccess">

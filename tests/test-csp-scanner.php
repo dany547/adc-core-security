@@ -286,7 +286,7 @@ $check( true === $marked[0]['allowed'], 'Extra source with trailing slash not ma
 $check( true === $marked[1]['allowed'], 'Default source not marked allowed.' );
 $check( false === $marked[2]['allowed'], 'Unlisted source marked allowed.' );
 $check( true === $marked[3]['allowed'], 'Default frame-src not marked allowed.' );
-$check( false === $scanner::mark_allowed( array( array( 'directive' => 'img-src', 'source' => 'https://cdn.one.net' ) ), array( 'script-src' => array( 'https://cdn.one.net' ) ) )[0]['allowed'], 'Source allowed under the wrong directive.' );
+$check( false === $scanner::mark_allowed( array( array( 'directive' => 'img-src', 'source' => 'http://cdn.one.net' ) ), array( 'script-src' => array( 'http://cdn.one.net' ) ) )[0]['allowed'], 'Source allowed under the wrong directive.' );
 
 // companion_hints: GTM-only page.
 $gtm_found = $scanner::merge_results( array( 'https://site.test/' => $scanner::extract_sources( $gtm, $site ) ) );
@@ -338,5 +338,90 @@ $check( 1700000000 === $stored['time'] && array( 'https://site.test/' ) === $sto
 $check( array( 'https://site.test/x' => 'HTTP 404' ) === $stored['errors'], 'validate_stored errors wrong.' );
 $check( 1 === count( $stored['found'] ) && 'first_sub' === $stored['found'][0]['party'] && array( 'port' ) === $stored['found'][0]['notes'], 'validate_stored found rows wrong.' );
 $check( "default-src 'self'" === $stored['existing_csp'], 'validate_stored existing_csp wrong.' );
+
+// normalize_extra_url: same-site page addresses only, always on the home URL's scheme, host and port.
+$home = 'https://www.site.test/';
+$norm = static function ( $raw, $home_url = 'https://www.site.test/' ) use ( $scanner ) {
+	return $scanner::normalize_extra_url( $raw, $home_url );
+};
+$cases = array(
+	array( '/contact', 'https://www.site.test/contact' ),
+	array( 'contact', 'https://www.site.test/contact' ),
+	array( 'site.test/contact?x=1', 'https://www.site.test/contact?x=1' ),
+	array( 'www.site.test/contact', 'https://www.site.test/contact' ),
+	array( 'https://site.test/contact', 'https://www.site.test/contact' ),
+	array( 'http://www.site.test/a', 'https://www.site.test/a' ),
+	array( '//site.test/a', 'https://www.site.test/a' ),
+	array( 'https://site.test/a#frag', 'https://www.site.test/a' ),
+	array( 'site.test:443/x', 'https://www.site.test/x' ),
+	array( '  /trim  ', 'https://www.site.test/trim' ),
+	array( 'https://www.site.test/', 'https://www.site.test/' ),
+	array( 'https://www.site.test', 'https://www.site.test/' ),
+	array( '', '' ),
+	array( '   ', '' ),
+	array( 'javascript:alert(1)', '' ),
+	array( 'JavaScript:alert(1)', '' ),
+	array( 'data:text/html,hi', '' ),
+	array( 'mailto:a@site.test', '' ),
+	array( 'ftp://site.test/a', '' ),
+	array( 'https://user:pass@site.test/a', '' ),
+	array( 'https://site.test@evil.test/a', '' ),
+	array( 'https://other.test/a', '' ),
+	array( 'other.test/a', '' ),
+	array( 'https://evil.site.test/a', '' ),
+	array( 'https://site.test:8080/a', '' ),
+	array( 'https://www.site.test/a b', '' ),
+	array( '/a<b', '' ),
+	array( '/' . str_repeat( 'a', 499 ), 'https://www.site.test/' . str_repeat( 'a', 499 ) ),
+	array( '/' . str_repeat( 'a', 500 ), '' ),
+);
+foreach ( $cases as $case ) {
+	$got = $norm( $case[0] );
+	$check( $case[1] === $got, 'normalize_extra_url(' . var_export( $case[0], true ) . ') gave ' . var_export( $got, true ) . ', expected ' . var_export( $case[1], true ) );
+}
+
+// The home URL's scheme is used when the home is plain http on the bare domain.
+$check( 'http://site.test/x' === $norm( 'https://www.site.test/x', 'http://site.test/' ), 'normalize_extra_url should follow the http home URL.' );
+$check( 'http://site.test/x' === $norm( '/x', 'http://site.test/' ), 'normalize_extra_url relative path should use the http home URL.' );
+$check( 'https://site.test:8443/x' === $norm( '/x', 'https://site.test:8443/' ), 'normalize_extra_url should keep the home port.' );
+$check( 'https://site.test:8443/x' === $norm( 'https://site.test:8443/x', 'https://site.test:8443/' ), 'normalize_extra_url should accept the home port.' );
+$check( '' === $norm( '/x', 'ftp://site.test/' ), 'normalize_extra_url should reject a non-http home URL.' );
+$check( '' === $norm( '/x', 'not a url' ), 'normalize_extra_url should reject an unparseable home URL.' );
+$check( 3 === $scanner::MAX_EXTRA_URLS, 'MAX_EXTRA_URLS should be 3.' );
+
+// mark_allowed: a found https:// origin is allowed by the bare 'https:' default in img-src and connect-src.
+$https_found = array(
+	array( 'directive' => 'img-src', 'source' => 'https://img.one.net' ),
+	array( 'directive' => 'connect-src', 'source' => 'https://api.one.net' ),
+	array( 'directive' => 'script-src', 'source' => 'https://cdn.one.net' ),
+	array( 'directive' => 'img-src', 'source' => 'http://old.one.net' ),
+	array( 'directive' => 'img-src', 'source' => 'https://listed.one.net' ),
+);
+$marked = $scanner::mark_allowed( $https_found, array( 'img-src' => array( 'https://listed.one.net' ) ) );
+$check( true === $marked[0]['allowed'] && 'https' === $marked[0]['allowed_by'], 'https:// img-src origin should be allowed by the https scheme.' );
+$check( true === $marked[1]['allowed'] && 'https' === $marked[1]['allowed_by'], 'https:// connect-src origin should be allowed by the https scheme.' );
+$check( false === $marked[2]['allowed'] && '' === $marked[2]['allowed_by'], 'https:// script-src origin must not be allowed by the https scheme.' );
+$check( false === $marked[3]['allowed'], 'http:// origin must not be allowed by the https scheme.' );
+$check( true === $marked[4]['allowed'] && 'list' === $marked[4]['allowed_by'], 'Listed origin should be allowed by list.' );
+$check( 'https://img.one.net' === $marked[0]['source'] && 'img-src' === $marked[0]['directive'], 'mark_allowed should keep existing keys.' );
+
+// expand_presets: presets and extras merged by directive, de-duplicated, sanitised.
+$expanded = $scanner::expand_presets( array( 'gtm' ), array() );
+$check( array( 'https://www.googletagmanager.com' ) === $expanded['script-src'], 'expand_presets gtm script-src wrong.' );
+$check( array( 'https://www.googletagmanager.com' ) === $expanded['frame-src'], 'expand_presets gtm frame-src wrong.' );
+$expanded = $scanner::expand_presets(
+	array( 'gtm', 'gtm', 'no_such_preset', 42 ),
+	array(
+		'script-src' => array( 'https://www.googletagmanager.com', 'https://x.test', 'not a source' ),
+		'img-src'    => array( 'https://img.test' ),
+		'bogus-src'  => array( 'https://ignored.test' ),
+		'worker-src' => array(),
+	)
+);
+$check( array( 'https://www.googletagmanager.com', 'https://x.test' ) === $expanded['script-src'], 'expand_presets should merge and de-duplicate script-src.' );
+$check( array( 'https://img.test' ) === $expanded['img-src'], 'expand_presets extra img-src wrong.' );
+$check( ! isset( $expanded['bogus-src'] ), 'expand_presets should drop unsupported directives.' );
+$check( array_key_exists( 'worker-src', $expanded ) && array() === $expanded['worker-src'], 'expand_presets should keep an empty extra directive.' );
+$check( array() === $scanner::expand_presets( array(), array() ), 'expand_presets of nothing should be empty.' );
 
 fwrite( STDOUT, "CSP scanner tests passed.\n" );
