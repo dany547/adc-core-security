@@ -1323,6 +1323,17 @@ class ADC_Security_Settings {
                 <a href="?page=adc-security&tab=changelog" class="nav-tab <?php echo 'changelog' === $active_tab ? 'nav-tab-active' : ''; ?>">Changelog</a>
             </nav>
 
+            <?php
+            /*
+             * Print the standard WordPress settings notices. The settings form posts to
+             * options.php, which registers "Settings saved." (or a validation error) as a
+             * settings error, drops it in the `settings_errors` transient and redirects
+             * back here with ?settings-updated=true. Without settings_errors() the screen
+             * simply reloads and the save looks like it did nothing.
+             */
+            settings_errors();
+            ?>
+
             <?php if ( 'overview' === $active_tab ) : ?>
                 <?php if ( class_exists( 'ADC_Security_Dashboard' ) ) : ?>
                     <?php ( new ADC_Security_Dashboard( $this->htaccess, $this->keys ) )->render(); ?>
