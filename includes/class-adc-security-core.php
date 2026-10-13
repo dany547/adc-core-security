@@ -82,6 +82,13 @@ class ADC_Security_Core {
 	public $rate_limit;
 
 	/**
+	 * Virtual patch (request-level CVE guard) instance.
+	 *
+	 * @var ADC_Security_Virtual_Patch
+	 */
+	public $virtual_patch;
+
+	/**
 	 * File integrity scanner instance.
 	 *
 	 * @var ADC_Security_Integrity
@@ -192,6 +199,9 @@ class ADC_Security_Core {
 			'woo_registration_protect_wp_form'   => 1,
 			'woo_block_disposable_emails'        => 1,
 			'woo_blocked_email_domains'          => '',
+			'virtual_patch_rules'                => array(),
+			'virtual_patch_monitor'              => 0,
+			'vulnerability_feed_enabled'         => 0,
         );
 
         $changed = false;
@@ -241,6 +251,7 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-totp.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-2fa.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-rate-limit.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-virtual-patch.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-integrity.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-vulnerabilities.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-woo-rules.php';
@@ -263,6 +274,7 @@ class ADC_Security_Core {
 		$this->settings  = new ADC_Security_Settings( $this->htaccess );
 		$this->login     = new ADC_Security_Login();
 		$this->rate_limit = new ADC_Security_Rate_Limit( $this->login );
+		$this->virtual_patch = new ADC_Security_Virtual_Patch();
 		$this->integrity      = new ADC_Security_Integrity();
 		$this->vulnerabilities = new ADC_Security_Vulnerabilities();
 		$this->hardening = new ADC_Security_Hardening( $this->csp );

@@ -32,6 +32,17 @@ class ADC_Security_Updater {
 	/**
 	 * Inject update data into the plugins transient.
 	 *
+	 * Two keys matter to WordPress core here, exactly as they do for a plugin
+	 * hosted on WordPress.org:
+	 *
+	 * - `response`  an available update.
+	 * - `no_update` the plugin supports updates and is already current. Leaving
+	 *   this out makes the plugin absent from both keys, which sets
+	 *   `update-supported` to false on the Plugins screen: the per-plugin
+	 *   "Auto-updates" control then has nothing to attach to, Site Health reports
+	 *   the plugin as not auto-updatable, and core has no installed-version data
+	 *   to confirm the plugin is on the latest release with.
+	 *
 	 * @param object $transient Plugin update transient.
 	 * @return object
 	 */
@@ -52,16 +63,27 @@ class ADC_Security_Updater {
 			return $transient;
 		}
 
+		// A release without the installable archive tells us nothing reliable
+		// about the installed state, so leave both keys untouched.
+		$download_url = $this->find_zip_asset( $release );
+
+		if ( ! $download_url ) {
+			return $transient;
+		}
+
+		if ( ! isset( $transient->response ) || ! is_array( $transient->response ) ) {
+			$transient->response = array();
+		}
+		if ( ! isset( $transient->no_update ) || ! is_array( $transient->no_update ) ) {
+			$transient->no_update = array();
+		}
+
+		$plugin_file = plugin_basename( ADC_SECURITY_FILE );
+
 		if ( version_compare( ADC_SECURITY_VERSION, $remote_version, '<' ) ) {
-			$download_url = $this->find_zip_asset( $release );
-
-			if ( ! $download_url ) {
-				return $transient;
-			}
-
 			$res                = new stdClass();
 			$res->slug          = 'adc-security';
-			$res->plugin        = plugin_basename( ADC_SECURITY_FILE );
+			$res->plugin        = $plugin_file;
 			$res->new_version   = $remote_version;
 			$res->package       = $download_url;
 			$res->tested        = $this->get_wp_tested_version( $release );
@@ -70,8 +92,29 @@ class ADC_Security_Updater {
 			$res->icons         = $this->get_plugin_icons();
 			$res->icon          = $res->icons['svg'];
 
-			$transient->response[ $res->plugin ] = $res;
+			$transient->response[ $plugin_file ] = $res;
+			unset( $transient->no_update[ $plugin_file ] );
+
+			return $transient;
 		}
+
+		// Installed version is current (or ahead of the published release, e.g. a
+		// site running an unreleased build). Report it as update-supported.
+		$current                 = new stdClass();
+		$current->slug           = 'adc-security';
+		$current->plugin         = $plugin_file;
+		$current->new_version    = ADC_SECURITY_VERSION;
+		$current->url            = isset( $release->html_url ) ? $release->html_url : 'https://github.com/' . ADC_SECURITY_GITHUB_REPO;
+		$current->package        = '';
+		$current->tested         = $this->get_wp_tested_version( $release );
+		$current->requires       = '5.8';
+		$current->requires_php   = '7.4';
+		$current->icons          = $this->get_plugin_icons();
+		$current->banners        = array();
+		$current->banners_rtl    = array();
+
+		$transient->no_update[ $plugin_file ] = $current;
+		unset( $transient->response[ $plugin_file ] );
 
 		return $transient;
 	}

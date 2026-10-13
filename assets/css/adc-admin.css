@@ -102,6 +102,19 @@
     border-bottom: none;
 }
 
+.adc-dashboard-sublist {
+    list-style: disc;
+    margin: 4px 0 8px 18px;
+    padding: 0;
+    color: #50575e;
+    font-size: 12px;
+}
+
+.adc-dashboard-sublist li {
+    padding: 2px 0;
+    border-bottom: none;
+}
+
 .adc-check-pass .dashicons {
     color: var(--wpds-color-foreground-content-success, #00a32a);
 }

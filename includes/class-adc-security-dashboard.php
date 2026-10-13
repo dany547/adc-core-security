@@ -351,7 +351,7 @@ class ADC_Security_Dashboard {
 					<?php if ( class_exists( 'ADC_Security_Vulnerabilities' ) ) : ?>
 						<?php $vulns = ADC_Security_Vulnerabilities::get_last_result(); ?>
 						<li>
-							<?php esc_html_e( 'Plugin health scan', 'adc-security' ); ?>:
+							<?php esc_html_e( 'Component health scan', 'adc-security' ); ?>:
 							<?php if ( empty( $vulns['scanned_at'] ) ) : ?>
 								<strong><?php esc_html_e( 'Not run yet', 'adc-security' ); ?></strong>
 							<?php else : ?>
@@ -359,10 +359,28 @@ class ADC_Security_Dashboard {
 									<?php
 									echo empty( $vulns['findings'] )
 										? esc_html__( 'No issues found', 'adc-security' )
-										/* translators: %d: number of flagged plugins */
-										: esc_html( sprintf( _n( '%d plugin flagged', '%d plugins flagged', count( $vulns['findings'] ), 'adc-security' ), count( $vulns['findings'] ) ) );
+										/* translators: %d: number of flagged components */
+										: esc_html( sprintf( _n( '%d component flagged', '%d components flagged', count( $vulns['findings'] ), 'adc-security' ), count( $vulns['findings'] ) ) );
 									?>
 								</strong>
+								<?php if ( ! empty( $vulns['findings'] ) ) : ?>
+									<ul class="adc-dashboard-sublist">
+										<?php foreach ( array_slice( $vulns['findings'], 0, 10 ) as $finding ) : ?>
+											<li>
+												<strong><?php echo esc_html( isset( $finding['component'] ) ? $finding['component'] : ( isset( $finding['plugin'] ) ? $finding['plugin'] : '' ) ); ?></strong>
+												<?php echo esc_html( isset( $finding['detail'] ) ? $finding['detail'] : '' ); ?>
+											</li>
+										<?php endforeach; ?>
+										<?php if ( count( $vulns['findings'] ) > 10 ) : ?>
+											<li>
+												<?php
+												/* translators: %d: number of additional findings not shown */
+												printf( esc_html__( 'and %d more.', 'adc-security' ), count( $vulns['findings'] ) - 10 );
+												?>
+											</li>
+										<?php endif; ?>
+									</ul>
+								<?php endif; ?>
 							<?php endif; ?>
 						</li>
 					<?php endif; ?>

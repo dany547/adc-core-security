@@ -97,6 +97,7 @@ jobs:
             "includes/class-adc-security-2fa.php"
             "includes/class-adc-security-ip.php"
             "includes/class-adc-security-rate-limit.php"
+            "includes/class-adc-security-virtual-patch.php"
             "includes/class-adc-security-integrity.php"
             "includes/class-adc-security-vulnerabilities.php"
             "includes/class-adc-security-cron-health.php"
@@ -136,6 +137,12 @@ jobs:
 
       - name: Test rate limiter
         run: php tests/test-rate-limit.php
+
+      - name: Test virtual patch matchers
+        run: php tests/test-virtual-patch.php
+
+      - name: Test vulnerability feed matchers
+        run: php tests/test-vulnerability-feed.php
 
       - name: Test WooCommerce abuse rules
         run: php tests/test-woo-rules.php

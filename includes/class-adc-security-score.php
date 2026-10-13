@@ -167,7 +167,7 @@ class ADC_Security_Score {
 		if ( null !== $vulnerability_issues ) {
 			$checks[] = array(
 				'id'     => 'no_abandoned_plugins',
-				'label'  => 'No abandoned/unmaintained plugins detected',
+				'label'  => 'No vulnerable or unmaintained plugins detected',
 				'passed' => 0 === (int) $vulnerability_issues,
 				'weight' => 6,
 				'tab'    => 'support',

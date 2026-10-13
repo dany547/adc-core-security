@@ -86,3 +86,8 @@ wp_clear_scheduled_hook( 'adc_security_vuln_scan' );
 $wpdb->query(
 	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_cksum\_%' OR option_name LIKE '\_transient\_timeout\_adc\_cksum\_%'"
 );
+
+// Remove cached vulnerability-feed lookups (dynamic per-component names).
+$wpdb->query(
+	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_vuln\_%' OR option_name LIKE '\_transient\_timeout\_adc\_vuln\_%'"
+);

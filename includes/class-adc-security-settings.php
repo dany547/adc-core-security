@@ -357,6 +357,56 @@ class ADC_Security_Settings {
 		);
 
 		add_settings_section(
+			'adc_security_virtual_patch_section',
+			'Virtual Patching (Exploited Core CVEs)',
+			array( $this, 'render_virtual_patch_section_intro' ),
+			'adc_security_hardening'
+		);
+
+		add_settings_field(
+			'virtual_patch_rules',
+			'Active Rules',
+			array( $this, 'render_virtual_patch_rules_field' ),
+			'adc_security_hardening',
+			'adc_security_virtual_patch_section',
+			array(
+				'label_for'   => 'virtual_patch_rules',
+				'description' => 'Each rule is a fixed, pattern-based guard for one exploited WordPress core vulnerability. Nothing is blocked unless you select the rule here.',
+			)
+		);
+
+		add_settings_field(
+			'virtual_patch_monitor',
+			'Monitor Mode',
+			array( $this, 'render_checkbox_field' ),
+			'adc_security_hardening',
+			'adc_security_virtual_patch_section',
+			array(
+				'label_for'   => 'virtual_patch_monitor',
+				'description' => 'Record every rule hit in the Activity log without blocking the request. Use it for a few days to confirm legitimate traffic never matches; uncheck it to enforce. Monitor mode is off by default.',
+			)
+		);
+
+		add_settings_section(
+			'adc_security_vulnerability_feed_section',
+			'Known Vulnerability Feed',
+			array( $this, 'render_vulnerability_feed_section_intro' ),
+			'adc_security_hardening'
+		);
+
+		add_settings_field(
+			'vulnerability_feed_enabled',
+			'Cross-reference CVEs',
+			array( $this, 'render_checkbox_field' ),
+			'adc_security_hardening',
+			'adc_security_vulnerability_feed_section',
+			array(
+				'label_for'   => 'vulnerability_feed_enabled',
+				'description' => 'Match the installed WordPress version and every active WordPress.org plugin against the free, public WPVulnerability database. Only the core version and the plugin slugs are sent, never users, URLs or content. A result is a cross-reference, not a clean bill of health, so keep installing updates.',
+			)
+		);
+
+		add_settings_section(
 			'adc_security_headers_section',
 			'Security Headers',
 			null,
@@ -1518,6 +1568,8 @@ class ADC_Security_Settings {
 			'password_block_common',
 			'password_check_hibp',
 			'rate_limiting_enabled',
+			'virtual_patch_monitor',
+			'vulnerability_feed_enabled',
 			'woo_checkout_protection',
 			'woo_monitor_mode',
 			'woo_checkout_honeypot',
@@ -1539,6 +1591,12 @@ class ADC_Security_Settings {
 		if ( isset( $input['htaccess_rules'] ) && is_array( $input['htaccess_rules'] ) ) {
 			$selected_rules = array_values( array_unique( array_filter( array_map( 'sanitize_key', array_filter( $input['htaccess_rules'], 'is_string' ) ) ) ) );
 			$new_input['htaccess_rules'] = array_values( array_intersect( ADC_Security_Htaccess::get_rule_keys(), $selected_rules ) );
+		}
+
+		// Virtual patch rules are an internal allowlist; no raw patterns are accepted.
+		if ( isset( $input['virtual_patch_rules'] ) && is_array( $input['virtual_patch_rules'] ) ) {
+			$selected_patches = array_values( array_unique( array_filter( array_map( 'sanitize_key', array_filter( $input['virtual_patch_rules'], 'is_string' ) ) ) ) );
+			$new_input['virtual_patch_rules'] = array_values( array_intersect( ADC_Security_Virtual_Patch::get_rule_keys(), $selected_patches ) );
 		}
 
 		if ( isset( $input['security_header_toggles'] ) && is_array( $input['security_header_toggles'] ) ) {
@@ -1680,6 +1738,41 @@ class ADC_Security_Settings {
 			</label>
 		<?php endforeach; ?>
 		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?> Rules are saved first; they are not active until you explicitly apply them below.</p>
+		<?php
+	}
+
+	/**
+	 * Section intro for the virtual patch rules.
+	 */
+	public function render_virtual_patch_section_intro() {
+		echo '<p>Request-level guards for WordPress core vulnerabilities that are already exploited in the wild, so a site that cannot install the core update on the same day stays protected in the meantime. Every rule matches attack-shaped input only, and a legitimate page slug, post name or plugin call can never match.</p>';
+	}
+
+	/**
+	 * Section intro for the known-vulnerability feed.
+	 */
+	public function render_vulnerability_feed_section_intro() {
+		echo '<p>The daily component scan always checks plugin maintenance health locally. The optional cross-reference below adds known CVEs for the installed WordPress version and the active plugins, using the free and open WPVulnerability API (no API key, no account).</p>';
+	}
+
+	/**
+	 * Render the fixed virtual patch rule selection.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_virtual_patch_rules_field( $args ) {
+		$options  = get_option( self::OPTION_NAME, array() );
+		$selected = ADC_Security_Virtual_Patch::get_enabled_rules( is_array( $options ) ? $options : array() );
+		?>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[virtual_patch_rules][]' ); ?>" value="">
+		<?php foreach ( ADC_Security_Virtual_Patch::get_rule_definitions() as $key => $definition ) : ?>
+			<label class="adc-checkbox-row">
+				<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[virtual_patch_rules][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>>
+				<strong><?php echo esc_html( $definition['label'] ); ?></strong>
+				<br><span class="description adc-checkbox-description"><?php echo esc_html( $definition['description'] ); ?></span>
+			</label>
+		<?php endforeach; ?>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
 		<?php
 	}
 

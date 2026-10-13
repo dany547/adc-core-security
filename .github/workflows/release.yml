@@ -19,8 +19,13 @@ jobs:
       - name: Build WordPress plugin archive
         run: git archive --format=zip --prefix=adc-security/ --output=adc-security.zip HEAD
 
+      - name: Generate SHA-256 checksum
+        run: sha256sum adc-security.zip > adc-security.zip.sha256
+
       - name: Publish release archive
         uses: softprops/action-gh-release@v2
         with:
-          files: adc-security.zip
+          files: |
+            adc-security.zip
+            adc-security.zip.sha256
           generate_release_notes: true
