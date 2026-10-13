@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.12.0] - 2026-10-13
+### Added
+- **Content-Security-Policy modes**: the single CSP checkbox is replaced by Off, Standard and Custom. Standard builds the policy from the sources you choose: service presets (Google Tag Manager, Google Analytics 4, and others, each with a description), plus an Advanced list per directive where each default source can be removed and extra domains can be added. A read-only preview shows the resulting policy as you edit. Custom sends the text you write and lists warnings for risky values such as `unsafe-eval` or wildcard sources.
+- **Report-Only mode**: send `Content-Security-Policy-Report-Only` to test a policy without blocking anything. Reports are collected by a REST endpoint on the site and summarised in a new **Blocked sources** panel on the Hardening tab, with an **Allow** button per source (adds it to that directive) and a **Clear** button.
+- **Referrer-Policy dropdown**: choose any of the eight valid values instead of the fixed `strict-origin-when-cross-origin`.
+- **Permissions-Policy modes**: Standard keeps the existing camera, microphone, geolocation, payment and USB restrictions; Custom accepts feature entries such as `fullscreen=(self)` or `geolocation=(self "https://maps.example.com")`, validated on save.
+- **HSTS settings**: configurable max age (minimum 300 seconds, default one year), an Include subdomains switch (on by default), and an opt-in Preload switch with a warning that preload is hard to undo.
+
+### Fixed
+- **Custom CSP ignored unless the CSP checkbox was ticked**: a saved custom policy now takes effect as soon as Custom mode is saved, with no off-and-on step. Sites that had CSP off stay off after the upgrade, and their existing custom text is kept for when they choose Custom.
+
 ## [1.11.0] - 2026-10-12
 ### Added
 - **Virtual patching**: a new Hardening section with opt-in, request-level guards for WordPress core vulnerabilities that are exploited in the wild, so a site stays protected in the window between a CVE being published and the core update being installed. Three rules ship: `pagename` path traversal in any encoding depth (CVE-2026-87902, unauthenticated LFI/RCE in page-template resolution), unauthenticated `/wp-json/batch/v1` requests (CVE-2026-63030, the first half of the "wp2shell" pre-auth RCE chain) and `author__not_in` / `author__in` arguments passed over HTTP (CVE-2026-60137, the second half of the same chain). Rules are pattern-based rather than exploit-string based, match only attack-shaped input, and every hit is recorded in the Activity log as a `virtual_patch` event with the CVE reference. Rules are off by default.

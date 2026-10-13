@@ -118,6 +118,11 @@ class ADC_Security_Rate_Limit {
 		$method = $request->get_method();
 		$route  = $request->get_route();
 
+		// CSP violation reports come from browsers and have their own per-IP bucket.
+		if ( '/adc-security/v1/csp-report' === $route ) {
+			return $result;
+		}
+
 		$sensitive_read = 'GET' === $method && ( 0 === strpos( $route, '/wp/v2/users' ) );
 		$write          = in_array( $method, array( 'POST', 'PUT', 'PATCH', 'DELETE' ), true );
 

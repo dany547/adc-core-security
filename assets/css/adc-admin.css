@@ -55,9 +55,13 @@
     margin: 0;
 }
 
+.adc-dashboard-card .hndle {
+    padding: 16px 24px;
+}
+
 .adc-dashboard-card .inside {
     margin: 0;
-    padding: 12px 16px 16px;
+    padding: 20px 24px 24px;
 }
 
 .adc-score-value {
@@ -231,4 +235,95 @@
 
 .adc-mb-10 {
     margin-bottom: 10px;
+}
+
+/* Security headers: mode selectors and conditional panels. */
+.adc-csp {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    max-width: 800px;
+}
+
+.adc-radio-row {
+    display: block;
+    margin: 0 0 8px;
+}
+
+.adc-csp-panel {
+    margin: 10px 0 14px 24px;
+    padding: 0 0 0 14px;
+    border-left: 3px solid #dcdcde;
+    max-width: 760px;
+}
+
+.adc-csp-panel > textarea {
+    width: 100%;
+}
+
+.adc-csp-advanced {
+    margin: 12px 0;
+}
+
+.adc-csp-advanced > summary {
+    cursor: pointer;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.adc-csp-directive {
+    padding: 10px 0;
+    border-top: 1px solid #f0f0f1;
+}
+
+.adc-csp-directive-name {
+    margin: 0 0 4px;
+}
+
+.adc-csp-source {
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.adc-csp-preview-wrap {
+    margin-top: 12px;
+}
+
+.adc-csp-preview {
+    background: #f6f7f7;
+    border: 1px solid #dcdcde;
+    padding: 10px 12px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    max-width: 100%;
+    font-size: 12px;
+}
+
+.adc-csp-warnings {
+    margin: 8px 0 0 18px;
+    list-style: disc;
+    color: #8a5d00;
+}
+
+.adc-warning-text {
+    color: #8a5d00;
+}
+
+.adc-csp-reports {
+    max-width: 900px;
+    overflow-x: auto;
+}
+
+.adc-csp-table {
+    max-width: none;
+    margin-bottom: 12px;
+}
+
+@media screen and (max-width: 782px) {
+    .adc-csp-panel {
+        margin-left: 12px;
+    }
 }

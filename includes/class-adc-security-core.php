@@ -61,6 +61,13 @@ class ADC_Security_Core {
 	public $csp;
 
 	/**
+	 * CSP violation report collector and blocked-source aggregator.
+	 *
+	 * @var ADC_Security_Csp_Reports
+	 */
+	public $csp_reports;
+
+	/**
 	 * Captcha instance.
 	 *
 	 * @var ADC_Security_Captcha
@@ -202,6 +209,17 @@ class ADC_Security_Core {
 			'virtual_patch_rules'                => array(),
 			'virtual_patch_monitor'              => 0,
 			'vulnerability_feed_enabled'         => 0,
+			'csp_mode'                           => 'off',
+			'csp_report_only'                    => 0,
+			'csp_presets'                        => array(),
+			'csp_extra_sources'                  => array(),
+			'csp_removed_defaults'               => array(),
+			'referrer_policy_value'              => 'strict-origin-when-cross-origin',
+			'permissions_policy_mode'            => 'standard',
+			'permissions_policy_custom'          => '',
+			'hsts_max_age'                       => 31536000,
+			'hsts_include_subdomains'            => 1,
+			'hsts_preload'                       => 0,
         );
 
         $changed = false;
@@ -224,6 +242,26 @@ class ADC_Security_Core {
 			$changed = true;
 		}
 
+		// 1.12.0 replaced the CSP checkbox with a mode. Derive it from the old state:
+		// a site that had CSP ticked keeps it (custom if it had text, otherwise standard);
+		// every other site stays off, even if old custom text exists. Only runs once,
+		// on the upgrade from a version older than 1.12.0.
+		if ( version_compare( (string) get_option( 'adc_security_version', '0.0.0' ), '1.12.0', '<' ) ) {
+			$had_csp = isset( $options['security_header_toggles'] ) && is_array( $options['security_header_toggles'] ) && in_array( 'csp', $options['security_header_toggles'], true );
+			$custom  = isset( $options['security_headers_csp'] ) && is_string( $options['security_headers_csp'] ) ? trim( $options['security_headers_csp'] ) : '';
+
+			if ( ! $had_csp ) {
+				$mode = 'off';
+			} else {
+				$mode = '' !== $custom ? 'custom' : 'standard';
+			}
+
+			if ( ! isset( $options['csp_mode'] ) || $options['csp_mode'] !== $mode ) {
+				$options['csp_mode'] = $mode;
+				$changed = true;
+			}
+		}
+
         if ( $changed ) {
             update_option( 'adc_security_options', $options, false );
         }
@@ -237,6 +275,7 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-htaccess.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-keys.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-csp.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-csp-reports.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-settings.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-login.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-hardening.php';
@@ -271,6 +310,8 @@ class ADC_Security_Core {
 		$this->logger    = new ADC_Security_Logger();
 		$this->htaccess  = new ADC_Security_Htaccess();
 		$this->csp       = new ADC_Security_Csp_Policy();
+		$this->csp_reports = new ADC_Security_Csp_Reports();
+		$this->csp_reports->register();
 		$this->settings  = new ADC_Security_Settings( $this->htaccess );
 		$this->login     = new ADC_Security_Login();
 		$this->rate_limit = new ADC_Security_Rate_Limit( $this->login );

@@ -50,6 +50,100 @@ class ADC_Security_Hardening {
 	}
 
 	/**
+	 * Permissions-Policy emitted in standard mode (and when a custom value is empty or invalid).
+	 */
+	const PERMISSIONS_POLICY_DEFAULT = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()';
+
+	/**
+	 * Referrer-Policy emitted when the stored value is missing or not allowlisted.
+	 */
+	const REFERRER_POLICY_DEFAULT = 'strict-origin-when-cross-origin';
+
+	/**
+	 * Valid Referrer-Policy tokens, keyed by token.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function get_referrer_policy_options() {
+		return array(
+			'no-referrer'                     => 'no-referrer - never send a referrer',
+			'no-referrer-when-downgrade'      => 'no-referrer-when-downgrade - send a referrer except HTTPS to HTTP',
+			'origin'                          => 'origin - scheme, host and port only',
+			'origin-when-cross-origin'        => 'origin-when-cross-origin - full URL on the same site, origin elsewhere',
+			'same-origin'                     => 'same-origin - send a referrer only to the same site',
+			'strict-origin'                   => 'strict-origin - origin only, nothing on HTTPS to HTTP',
+			'strict-origin-when-cross-origin' => 'strict-origin-when-cross-origin - recommended',
+			'unsafe-url'                      => 'unsafe-url - always send the full URL',
+		);
+	}
+
+	/**
+	 * Resolve the effective CSP mode (off|standard|custom).
+	 *
+	 * Options saved before 1.12.0 have no csp_mode key; the migration in the core
+	 * class normally sets it, this fallback keeps an unmigrated read consistent.
+	 *
+	 * @param array $options Plugin options.
+	 * @return string
+	 */
+	public static function get_csp_mode( $options ) {
+		$options = is_array( $options ) ? $options : array();
+
+		if ( isset( $options['csp_mode'] ) && in_array( $options['csp_mode'], array( 'off', 'standard', 'custom' ), true ) ) {
+			return $options['csp_mode'];
+		}
+
+		$toggles = isset( $options['security_header_toggles'] ) && is_array( $options['security_header_toggles'] ) ? $options['security_header_toggles'] : array();
+		if ( ! in_array( 'csp', $toggles, true ) ) {
+			return 'off';
+		}
+
+		$custom = isset( $options['security_headers_csp'] ) && is_string( $options['security_headers_csp'] ) ? trim( $options['security_headers_csp'] ) : '';
+		return '' !== $custom ? 'custom' : 'standard';
+	}
+
+	/**
+	 * Validate a custom Permissions-Policy value.
+	 *
+	 * Accepts comma, semicolon or newline separated entries shaped like
+	 * feature=(), feature=(self), feature=(self "https://example.com") or feature=*.
+	 *
+	 * @param mixed $raw Raw input.
+	 * @return array{value: string, errors: string[]}
+	 */
+	public static function sanitize_permissions_policy( $raw ) {
+		$raw    = is_string( $raw ) ? str_replace( array( "\r\n", "\r", "\n" ), ',', $raw ) : '';
+		$valid  = array();
+		$errors = array();
+		$seen   = array();
+		$item   = '(?:\*|self|src|"https?://[a-z0-9.\-]+(?::[0-9]{1,5})?")';
+		$pattern = '#^([a-z][a-z0-9-]*)=(\*|\(\s*(?:' . $item . '(?:\s+' . $item . ')*)?\s*\))$#';
+
+		foreach ( preg_split( '/[,;]/', $raw ) as $entry ) {
+			$entry = trim( strtolower( $entry ) );
+			if ( '' === $entry ) {
+				continue;
+			}
+
+			if ( ! preg_match( $pattern, $entry, $matches ) ) {
+				$errors[] = 'Permissions-Policy entry "' . $entry . '" was ignored. Use feature=(), feature=(self) or feature=*.';
+				continue;
+			}
+
+			if ( isset( $seen[ $matches[1] ] ) ) {
+				continue;
+			}
+			$seen[ $matches[1] ] = true;
+			$valid[]             = $matches[1] . '=' . $matches[2];
+		}
+
+		return array(
+			'value'  => implode( ', ', $valid ),
+			'errors' => $errors,
+		);
+	}
+
+	/**
 	 * Options
 	 *
 	 * @var array
@@ -230,38 +324,125 @@ class ADC_Security_Hardening {
 				header( 'X-XSS-Protection: 1; mode=block' );
 			}
 			if ( $this->is_security_header_enabled( 'referrer_policy' ) ) {
-				header( 'Referrer-Policy: strict-origin-when-cross-origin' );
+				header( 'Referrer-Policy: ' . $this->get_referrer_policy_value() );
 			}
 
-			// CSP: use admin-configured value or a secure restrictive default.
-			if ( $this->is_security_header_enabled( 'csp' ) ) {
-				$custom_csp = isset( $this->options['security_headers_csp'] ) ? $this->options['security_headers_csp'] : '';
-				if ( ! empty( $custom_csp ) ) {
-					header( 'Content-Security-Policy: ' . $custom_csp );
-				} else {
-					// Balanced default: WordPress page builders need inline configuration scripts.
-					// Keep eval disabled, allow HTTPS XHR/fetch for third-party integrations,
-					// and limit external executable resources to known origins.
-					$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-					$allow_dynamic_scripts = $this->csp->allows_dynamic_scripts(
-						! empty( $this->options['csp_dynamic_scripts_compatibility'] ),
-						is_admin(),
-						$request_uri
-					);
-
-					header( 'Content-Security-Policy: ' . $this->csp->build( '', $allow_dynamic_scripts ) );
-				}
-			}
+			// CSP is controlled by csp_mode (off|standard|custom), not by a checkbox.
+			$this->send_csp_header();
 
 			if ( $this->is_security_header_enabled( 'permissions_policy' ) ) {
-				header( 'Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()' );
+				header( 'Permissions-Policy: ' . $this->get_permissions_policy_value() );
 			}
 
 			// HSTS: only send when HTTPS is active to avoid issues on HTTP-only sites.
 			if ( $this->is_security_header_enabled( 'hsts' ) && is_ssl() ) {
-				header( 'Strict-Transport-Security: max-age=31536000; includeSubDomains' );
+				header( 'Strict-Transport-Security: ' . $this->get_hsts_value() );
 			}
 		});
+	}
+
+	/**
+	 * Emit the Content-Security-Policy (or Report-Only) header for the configured mode.
+	 */
+	private function send_csp_header() {
+		$mode = self::get_csp_mode( $this->options );
+		if ( 'off' === $mode ) {
+			return;
+		}
+
+		$report_only = ! empty( $this->options['csp_report_only'] );
+		$report_uri  = $report_only && class_exists( 'ADC_Security_Csp_Reports' ) ? ADC_Security_Csp_Reports::report_uri() : '';
+		$policy      = '';
+
+		if ( 'custom' === $mode ) {
+			$custom = ADC_Security_Csp_Policy::sanitize_policy( isset( $this->options['security_headers_csp'] ) ? $this->options['security_headers_csp'] : '' );
+			$policy = $custom['value'];
+			if ( '' !== $policy && '' !== $report_uri && false === stripos( $policy, 'report-uri' ) ) {
+				$policy = rtrim( $policy, '; ' ) . '; report-uri ' . $report_uri . ';';
+			}
+		}
+
+		// Standard mode, or a custom mode with no usable text: generated policy.
+		if ( '' === $policy ) {
+			$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+			$allow_dynamic_scripts = $this->csp->allows_dynamic_scripts(
+				! empty( $this->options['csp_dynamic_scripts_compatibility'] ),
+				is_admin(),
+				$request_uri
+			);
+
+			$policy = $this->csp->build_generated(
+				$this->get_option_list( 'csp_presets' ),
+				$this->get_option_list( 'csp_extra_sources' ),
+				$this->get_option_list( 'csp_removed_defaults' ),
+				$allow_dynamic_scripts,
+				$report_uri
+			);
+		}
+
+		$header = $report_only ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
+		header( $header . ': ' . trim( preg_replace( '/[\r\n]+/', ' ', $policy ) ) );
+	}
+
+	/**
+	 * Read an array-valued option, tolerating missing or malformed data.
+	 *
+	 * @param string $key Option key.
+	 * @return array
+	 */
+	private function get_option_list( $key ) {
+		return isset( $this->options[ $key ] ) && is_array( $this->options[ $key ] ) ? $this->options[ $key ] : array();
+	}
+
+	/**
+	 * Referrer-Policy token from the allowlist.
+	 *
+	 * @return string
+	 */
+	private function get_referrer_policy_value() {
+		$value = isset( $this->options['referrer_policy_value'] ) && is_string( $this->options['referrer_policy_value'] ) ? $this->options['referrer_policy_value'] : '';
+		return array_key_exists( $value, self::get_referrer_policy_options() ) ? $value : self::REFERRER_POLICY_DEFAULT;
+	}
+
+	/**
+	 * Permissions-Policy value: the standard policy, or a validated custom one.
+	 *
+	 * @return string
+	 */
+	private function get_permissions_policy_value() {
+		$mode = isset( $this->options['permissions_policy_mode'] ) ? $this->options['permissions_policy_mode'] : 'standard';
+		if ( 'custom' === $mode ) {
+			$custom = self::sanitize_permissions_policy( isset( $this->options['permissions_policy_custom'] ) ? $this->options['permissions_policy_custom'] : '' );
+			if ( '' !== $custom['value'] ) {
+				return $custom['value'];
+			}
+		}
+		return self::PERMISSIONS_POLICY_DEFAULT;
+	}
+
+	/**
+	 * Strict-Transport-Security value. Minimum max-age is 300 seconds.
+	 *
+	 * Preload is only added together with includeSubDomains, as the preload list requires.
+	 *
+	 * @return string
+	 */
+	private function get_hsts_value() {
+		$max_age = isset( $this->options['hsts_max_age'] ) ? absint( $this->options['hsts_max_age'] ) : 31536000;
+		if ( $max_age < 300 ) {
+			$max_age = 300;
+		}
+
+		$value = 'max-age=' . $max_age;
+		$include_subdomains = ! isset( $this->options['hsts_include_subdomains'] ) || ! empty( $this->options['hsts_include_subdomains'] );
+		if ( $include_subdomains ) {
+			$value .= '; includeSubDomains';
+			if ( ! empty( $this->options['hsts_preload'] ) ) {
+				$value .= '; preload';
+			}
+		}
+
+		return $value;
 	}
 
 	/**

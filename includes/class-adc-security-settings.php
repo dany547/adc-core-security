@@ -46,6 +46,8 @@ class ADC_Security_Settings {
 		add_action( 'admin_post_adc_security_restore_keys', array( $this, 'handle_restore_keys' ) );
 		add_action( 'admin_post_adc_security_unblock_ip', array( $this, 'handle_unblock_ip' ) );
 		add_action( 'admin_post_adc_security_export_events', array( $this, 'handle_export_events' ) );
+		add_action( 'admin_post_adc_security_csp_allow', array( $this, 'handle_csp_allow_source' ) );
+		add_action( 'admin_post_adc_security_csp_clear_reports', array( $this, 'handle_csp_clear_reports' ) );
         // Removed global admin_head hook to prevent interference and fix warnings
 	}
 
@@ -434,17 +436,17 @@ class ADC_Security_Settings {
 			)
 		);
 
-        add_settings_field(
-            'security_headers_csp',
-            'Content-Security-Policy',
-            array( $this, 'render_textarea_field' ),
-            'adc_security_hardening',
-            'adc_security_headers_section',
-            array(
-                'label_for' => 'security_headers_csp',
-                'description' => 'Optional custom Content-Security-Policy value. Enable CSP in the fine-tuning list below before using this field. Existing custom values override the generated policy.',
-            )
-        );
+		add_settings_field(
+			'csp_mode',
+			'Content-Security-Policy',
+			array( $this, 'render_csp_field' ),
+			'adc_security_hardening',
+			'adc_security_headers_section',
+			array(
+				'class'       => 'adc-field-csp',
+				'description' => 'Standard builds the policy from the options below and works for most sites. Custom sends exactly the text you write. Off sends no CSP header. Changes apply as soon as you save, and the header is only sent when Enable Security Headers is on.',
+			)
+		);
 
 		add_settings_field(
 			'security_header_toggles',
@@ -454,7 +456,43 @@ class ADC_Security_Settings {
 			'adc_security_headers_section',
 			array(
 				'label_for'   => 'security_header_toggles',
-				'description' => 'Choose which fixed headers are emitted when Enable Security Headers is active. CSP can be disabled independently when a theme or plugin requires dynamic JavaScript templates.',
+				'description' => 'Choose which fixed headers are emitted when Enable Security Headers is active. Content-Security-Policy is configured separately above.',
+			)
+		);
+
+		add_settings_field(
+			'referrer_policy_value',
+			'Referrer-Policy value',
+			array( $this, 'render_referrer_policy_field' ),
+			'adc_security_hardening',
+			'adc_security_headers_section',
+			array(
+				'class'       => 'adc-field-referrer_policy',
+				'description' => 'How much of the page address is sent to other sites when visitors follow a link.',
+			)
+		);
+
+		add_settings_field(
+			'permissions_policy_mode',
+			'Permissions-Policy',
+			array( $this, 'render_permissions_policy_field' ),
+			'adc_security_hardening',
+			'adc_security_headers_section',
+			array(
+				'class'       => 'adc-field-permissions_policy',
+				'description' => 'Controls which browser features (camera, microphone, location, payment, USB) this site and embedded content may use.',
+			)
+		);
+
+		add_settings_field(
+			'hsts_max_age',
+			'Strict-Transport-Security',
+			array( $this, 'render_hsts_field' ),
+			'adc_security_hardening',
+			'adc_security_headers_section',
+			array(
+				'class'       => 'adc-field-hsts',
+				'description' => 'Tells browsers to use HTTPS for this site. Sent only when the request is already HTTPS.',
 			)
 		);
 
@@ -1083,6 +1121,11 @@ class ADC_Security_Settings {
     public function enqueue_admin_scripts() {
         wp_enqueue_style( 'adc-admin-css', ADC_SECURITY_URL . 'assets/css/adc-admin.css', array(), ADC_SECURITY_VERSION );
         wp_enqueue_script( 'adc-admin-settings', ADC_SECURITY_URL . 'assets/js/adc-admin-settings.js', array( 'jquery' ), ADC_SECURITY_VERSION, true );
+        wp_localize_script( 'adc-admin-settings', 'adcSecurityCsp', array(
+            'directives' => ADC_Security_Csp_Policy::get_directives(),
+            'defaults'   => ADC_Security_Csp_Policy::get_default_sources(),
+            'presets'    => ADC_Security_Csp_Policy::get_service_presets(),
+        ) );
     }
 
     /**
@@ -1492,6 +1535,7 @@ class ADC_Security_Settings {
                      ?>
                  </form>
 				<?php if ( 'hardening' === $active_tab ) : ?>
+					<?php $this->render_csp_reports_panel(); ?>
 					<?php $this->render_htaccess_actions(); ?>
 					<?php $this->render_keys_actions(); ?>
 				<?php elseif ( 'login' === $active_tab ) : ?>
@@ -1580,6 +1624,9 @@ class ADC_Security_Settings {
 			'woo_registration_disable_myaccount_form',
 			'woo_registration_protect_wp_form',
 			'woo_block_disposable_emails',
+			'csp_report_only',
+			'hsts_include_subdomains',
+			'hsts_preload',
 		);
 		foreach ( $checkbox_keys as $key ) {
 			if ( isset( $input[ $key ] ) ) {
@@ -1604,9 +1651,56 @@ class ADC_Security_Settings {
 			$new_input['security_header_toggles'] = array_values( array_intersect( array_keys( ADC_Security_Hardening::get_security_header_definitions() ), $selected_headers ) );
 		}
 
-		// CSP header: sanitize as raw header value (no HTML, no newlines).
+		// Content-Security-Policy: mode, standard generator inputs, and custom text.
+		if ( isset( $input['csp_mode'] ) ) {
+			$new_input['csp_mode'] = in_array( $input['csp_mode'], array( 'off', 'standard', 'custom' ), true ) ? $input['csp_mode'] : 'off';
+		}
+		if ( isset( $input['csp_presets'] ) ) {
+			$chosen = is_array( $input['csp_presets'] ) ? array_filter( $input['csp_presets'], 'is_string' ) : array();
+			$new_input['csp_presets'] = array_values( array_intersect( array_keys( ADC_Security_Csp_Policy::get_service_presets() ), $chosen ) );
+		}
+		if ( isset( $input['csp_extra_sources'] ) && is_array( $input['csp_extra_sources'] ) ) {
+			$extra = array();
+			foreach ( ADC_Security_Csp_Policy::get_directives() as $directive ) {
+				$raw = isset( $input['csp_extra_sources'][ $directive ] ) && is_string( $input['csp_extra_sources'][ $directive ] ) ? wp_unslash( $input['csp_extra_sources'][ $directive ] ) : '';
+				$extra[ $directive ] = $this->sanitize_csp_source_list( $raw );
+			}
+			$new_input['csp_extra_sources'] = $extra;
+		}
+		if ( isset( $input['csp_removed_defaults'] ) && is_array( $input['csp_removed_defaults'] ) ) {
+			// Only default sources can be removed; anything else posted is ignored.
+			$removed = array();
+			foreach ( ADC_Security_Csp_Policy::get_default_sources() as $directive => $sources ) {
+				$posted = isset( $input['csp_removed_defaults'][ $directive ] ) && is_array( $input['csp_removed_defaults'][ $directive ] ) ? array_filter( $input['csp_removed_defaults'][ $directive ], 'is_string' ) : array();
+				$removed[ $directive ] = array_values( array_intersect( $sources, $posted ) );
+			}
+			$new_input['csp_removed_defaults'] = $removed;
+		}
 		if ( isset( $input['security_headers_csp'] ) ) {
-			$new_input['security_headers_csp'] = sanitize_text_field( wp_unslash( $input['security_headers_csp'] ) );
+			$policy = ADC_Security_Csp_Policy::sanitize_policy( wp_unslash( $input['security_headers_csp'] ) );
+			$new_input['security_headers_csp'] = $policy['value'];
+			foreach ( $policy['errors'] as $error ) {
+				add_settings_error( self::OPTION_NAME, 'adc_security_csp_invalid', 'Content-Security-Policy: ' . esc_html( $error ), 'error' );
+			}
+		}
+
+		// Referrer-Policy, Permissions-Policy and HSTS.
+		if ( isset( $input['referrer_policy_value'] ) ) {
+			$tokens = array_keys( ADC_Security_Hardening::get_referrer_policy_options() );
+			$new_input['referrer_policy_value'] = in_array( $input['referrer_policy_value'], $tokens, true ) ? $input['referrer_policy_value'] : ADC_Security_Hardening::REFERRER_POLICY_DEFAULT;
+		}
+		if ( isset( $input['permissions_policy_mode'] ) ) {
+			$new_input['permissions_policy_mode'] = 'custom' === $input['permissions_policy_mode'] ? 'custom' : 'standard';
+		}
+		if ( isset( $input['permissions_policy_custom'] ) ) {
+			$permissions = ADC_Security_Hardening::sanitize_permissions_policy( wp_unslash( $input['permissions_policy_custom'] ) );
+			$new_input['permissions_policy_custom'] = $permissions['value'];
+			foreach ( $permissions['errors'] as $error ) {
+				add_settings_error( self::OPTION_NAME, 'adc_security_pp_invalid', 'Permissions-Policy: ' . esc_html( $error ), 'error' );
+			}
+		}
+		if ( isset( $input['hsts_max_age'] ) ) {
+			$new_input['hsts_max_age'] = max( 300, absint( $input['hsts_max_age'] ) );
 		}
 
 		// Admin session expiration days: 1..30, default 7
@@ -1777,6 +1871,349 @@ class ADC_Security_Settings {
 	}
 
 	/**
+	 * Read an array-valued option from a stored options array.
+	 *
+	 * @param array  $options Stored options.
+	 * @param string $key     Option key.
+	 * @return array
+	 */
+	private function get_option_array( $options, $key ) {
+		return isset( $options[ $key ] ) && is_array( $options[ $key ] ) ? $options[ $key ] : array();
+	}
+
+	/**
+	 * Turn a textarea of sources (spaces, commas or newlines) into a clean list.
+	 *
+	 * @param string $raw Raw textarea value.
+	 * @return string[]
+	 */
+	private function sanitize_csp_source_list( $raw ) {
+		$valid = array();
+		foreach ( preg_split( '/[\s,]+/', (string) $raw, -1, PREG_SPLIT_NO_EMPTY ) as $token ) {
+			$source = ADC_Security_Csp_Policy::sanitize_source( $token );
+			if ( '' !== $source && ! in_array( $source, $valid, true ) ) {
+				$valid[] = $source;
+			}
+			if ( count( $valid ) >= 50 ) {
+				break;
+			}
+		}
+		return $valid;
+	}
+
+	/**
+	 * Render the Content-Security-Policy mode selector and its panels.
+	 *
+	 * Every panel is submitted even when hidden, so the form works without JavaScript.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_csp_field( $args ) {
+		$options     = get_option( self::OPTION_NAME, array() );
+		$mode        = ADC_Security_Hardening::get_csp_mode( $options );
+		$custom      = isset( $options['security_headers_csp'] ) && is_string( $options['security_headers_csp'] ) ? $options['security_headers_csp'] : '';
+		$presets     = $this->get_option_array( $options, 'csp_presets' );
+		$extra       = $this->get_option_array( $options, 'csp_extra_sources' );
+		$removed     = $this->get_option_array( $options, 'csp_removed_defaults' );
+		$report_only = ! empty( $options['csp_report_only'] );
+		$name        = self::OPTION_NAME . '[csp_mode]';
+		$modes       = array(
+			'off'      => array( 'Off', 'Do not send a Content-Security-Policy header.' ),
+			'standard' => array( 'Standard (recommended)', 'Generated from the services and sources below.' ),
+			'custom'   => array( 'Custom', 'Send exactly the policy text entered below.' ),
+		);
+		$directives  = ADC_Security_Csp_Policy::get_directives();
+		$defaults    = ADC_Security_Csp_Policy::get_default_sources();
+		$catalog     = ADC_Security_Csp_Policy::get_service_presets();
+		$warnings    = '' !== trim( $custom ) ? ADC_Security_Csp_Policy::detect_warnings( $custom ) : array();
+		?>
+		<fieldset class="adc-csp">
+			<legend class="screen-reader-text"><span>Content-Security-Policy mode</span></legend>
+			<?php foreach ( $modes as $value => $item ) : ?>
+				<label class="adc-radio-row">
+					<input type="radio" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $value ); ?>" <?php checked( $mode, $value ); ?>>
+					<strong><?php echo esc_html( $item[0] ); ?></strong>
+					<span class="description adc-checkbox-description"><?php echo esc_html( $item[1] ); ?></span>
+				</label>
+			<?php endforeach; ?>
+
+			<div class="adc-csp-panel" data-adc-when="csp_mode" data-adc-values="standard">
+				<p class="adc-block-label"><strong>Services you use</strong></p>
+				<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="">
+				<?php foreach ( $catalog as $key => $preset ) : ?>
+					<label class="adc-checkbox-row">
+						<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_presets][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $presets, true ) ); ?>>
+						<strong><?php echo esc_html( $preset['label'] ); ?></strong>
+						<br><span class="description adc-checkbox-description"><?php echo esc_html( $preset['description'] ); ?></span>
+					</label>
+				<?php endforeach; ?>
+
+				<details class="adc-csp-advanced">
+					<summary>Advanced: sources per directive</summary>
+					<p class="description">Tick <em>Remove</em> to turn off a default source. Add your own domains in the box for a directive, separated by spaces, commas or new lines.</p>
+					<?php foreach ( $directives as $directive ) : ?>
+						<div class="adc-csp-directive">
+							<p class="adc-csp-directive-name"><code><?php echo esc_html( $directive ); ?></code></p>
+							<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_removed_defaults][' . $directive . '][]' ); ?>" value="">
+							<?php foreach ( isset( $defaults[ $directive ] ) ? $defaults[ $directive ] : array() as $source ) : ?>
+								<label class="adc-checkbox-row adc-csp-source">
+									<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_removed_defaults][' . $directive . '][]' ); ?>" value="<?php echo esc_attr( $source ); ?>" <?php checked( isset( $removed[ $directive ] ) && in_array( $source, (array) $removed[ $directive ], true ) ); ?>>
+									<code><?php echo esc_html( $source ); ?></code> <span class="description">Remove</span>
+								</label>
+							<?php endforeach; ?>
+							<label class="adc-block-label" for="<?php echo esc_attr( 'adc-csp-extra-' . $directive ); ?>">Extra sources</label>
+							<textarea id="<?php echo esc_attr( 'adc-csp-extra-' . $directive ); ?>" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_extra_sources][' . $directive . ']' ); ?>" rows="2" class="large-text code"><?php echo esc_textarea( implode( "\n", $this->get_option_array( $extra, $directive ) ) ); ?></textarea>
+						</div>
+					<?php endforeach; ?>
+				</details>
+
+				<div class="adc-csp-preview-wrap">
+					<p class="adc-block-label"><strong>Resulting policy (preview)</strong></p>
+					<pre class="adc-csp-preview" id="adc-csp-preview"><?php echo esc_html( ( new ADC_Security_Csp_Policy() )->build_generated( $presets, $extra, $removed ) ); ?></pre>
+				</div>
+			</div>
+
+			<div class="adc-csp-panel" data-adc-when="csp_mode" data-adc-values="custom">
+				<textarea name="<?php echo esc_attr( self::OPTION_NAME . '[security_headers_csp]' ); ?>" rows="6" class="large-text code"><?php echo esc_textarea( $custom ); ?></textarea>
+				<p class="description">Directives separated by semicolons, for example <code>default-src 'self'; script-src 'self' https://example.com</code>. Sent as written, after removing invalid parts.</p>
+				<?php if ( ! empty( $warnings ) ) : ?>
+					<ul class="adc-csp-warnings">
+						<?php foreach ( $warnings as $warning ) : ?>
+							<li><?php echo esc_html( $warning ); ?></li>
+						<?php endforeach; ?>
+					</ul>
+				<?php endif; ?>
+			</div>
+
+			<div class="adc-csp-panel" data-adc-when="csp_mode" data-adc-values="standard custom">
+				<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_report_only]' ); ?>" value="0">
+				<label class="adc-checkbox-row">
+					<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[csp_report_only]' ); ?>" value="1" <?php checked( $report_only ); ?>>
+					<strong>Report-Only (test without blocking)</strong>
+					<br><span class="description adc-checkbox-description">Browsers report what the policy would block instead of blocking it, and the reports appear under Blocked sources below. Use this on any new policy, then turn it off once the list is clean.</span>
+				</label>
+			</div>
+		</fieldset>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
+		<?php
+	}
+
+	/**
+	 * Render the Referrer-Policy dropdown.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_referrer_policy_field( $args ) {
+		$options = get_option( self::OPTION_NAME, array() );
+		$value   = isset( $options['referrer_policy_value'] ) && is_string( $options['referrer_policy_value'] ) ? $options['referrer_policy_value'] : '';
+		$choices = ADC_Security_Hardening::get_referrer_policy_options();
+		if ( ! array_key_exists( $value, $choices ) ) {
+			$value = ADC_Security_Hardening::REFERRER_POLICY_DEFAULT;
+		}
+		?>
+		<select name="<?php echo esc_attr( self::OPTION_NAME . '[referrer_policy_value]' ); ?>">
+			<?php foreach ( $choices as $token => $label ) : ?>
+				<option value="<?php echo esc_attr( $token ); ?>" <?php selected( $value, $token ); ?>><?php echo esc_html( $label ); ?></option>
+			<?php endforeach; ?>
+		</select>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
+		<?php
+	}
+
+	/**
+	 * Render the Permissions-Policy mode selector and custom value.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_permissions_policy_field( $args ) {
+		$options = get_option( self::OPTION_NAME, array() );
+		$mode    = isset( $options['permissions_policy_mode'] ) && 'custom' === $options['permissions_policy_mode'] ? 'custom' : 'standard';
+		$custom  = isset( $options['permissions_policy_custom'] ) && is_string( $options['permissions_policy_custom'] ) ? $options['permissions_policy_custom'] : '';
+		$name    = self::OPTION_NAME . '[permissions_policy_mode]';
+		?>
+		<fieldset class="adc-csp">
+			<legend class="screen-reader-text"><span>Permissions-Policy mode</span></legend>
+			<label class="adc-radio-row">
+				<input type="radio" name="<?php echo esc_attr( $name ); ?>" value="standard" <?php checked( $mode, 'standard' ); ?>>
+				<strong>Standard</strong>
+				<span class="description adc-checkbox-description"><code><?php echo esc_html( ADC_Security_Hardening::PERMISSIONS_POLICY_DEFAULT ); ?></code></span>
+			</label>
+			<label class="adc-radio-row">
+				<input type="radio" name="<?php echo esc_attr( $name ); ?>" value="custom" <?php checked( $mode, 'custom' ); ?>>
+				<strong>Custom</strong>
+				<span class="description adc-checkbox-description">Use the entries below.</span>
+			</label>
+			<div class="adc-csp-panel" data-adc-when="permissions_policy_mode" data-adc-values="custom">
+				<textarea name="<?php echo esc_attr( self::OPTION_NAME . '[permissions_policy_custom]' ); ?>" rows="3" class="large-text code" placeholder="<?php echo esc_attr( ADC_Security_Hardening::PERMISSIONS_POLICY_DEFAULT ); ?>"><?php echo esc_textarea( $custom ); ?></textarea>
+				<p class="description">One entry per line or separated by commas. <code>feature=()</code> blocks the feature, <code>feature=(self)</code> allows this site, <code>feature=*</code> allows everywhere. Example: <code>fullscreen=(self), geolocation=(self "https://maps.example.com")</code>. Invalid entries are dropped with a message on save.</p>
+			</div>
+		</fieldset>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
+		<?php
+	}
+
+	/**
+	 * Render the HSTS max-age and subdomain/preload options.
+	 *
+	 * @param array $args Field arguments.
+	 */
+	public function render_hsts_field( $args ) {
+		$options    = get_option( self::OPTION_NAME, array() );
+		$max_age    = isset( $options['hsts_max_age'] ) ? absint( $options['hsts_max_age'] ) : 31536000;
+		$subdomains = ! isset( $options['hsts_include_subdomains'] ) || ! empty( $options['hsts_include_subdomains'] );
+		$preload    = ! empty( $options['hsts_preload'] );
+		?>
+		<p>
+			<label for="adc-hsts-max-age"><strong>Max age (seconds)</strong></label><br>
+			<input type="number" id="adc-hsts-max-age" name="<?php echo esc_attr( self::OPTION_NAME . '[hsts_max_age]' ); ?>" value="<?php echo esc_attr( $max_age ); ?>" min="300" step="1" class="regular-text">
+			<span class="description">31536000 is one year. The minimum is 300.</span>
+		</p>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[hsts_include_subdomains]' ); ?>" value="0">
+		<label class="adc-checkbox-row">
+			<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[hsts_include_subdomains]' ); ?>" value="1" <?php checked( $subdomains ); ?>>
+			<strong>Include subdomains</strong>
+		</label>
+		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[hsts_preload]' ); ?>" value="0">
+		<label class="adc-checkbox-row">
+			<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[hsts_preload]' ); ?>" value="1" <?php checked( $preload ); ?>>
+			<strong>Preload</strong>
+			<br><span class="description adc-checkbox-description adc-warning-text">Only enable this if every subdomain will serve HTTPS permanently. Preload is hard to undo: removing a domain from browser preload lists takes months and needs a removal request at hstspreload.org. Preload is sent only together with Include subdomains.</span>
+		</label>
+		<p class="description"><?php echo wp_kses_post( $args['description'] ); ?></p>
+		<?php
+	}
+
+	/**
+	 * Render the blocked-sources panel and its Allow / Clear actions.
+	 *
+	 * Rendered outside the options form because each button posts on its own.
+	 */
+	private function render_csp_reports_panel() {
+		$core    = ADC_Security_Core::instance();
+		$reports = isset( $core->csp_reports ) && $core->csp_reports instanceof ADC_Security_Csp_Reports ? $core->csp_reports : null;
+		$rows    = $reports ? $reports->get_blocked_summary( 50 ) : array();
+		$action  = esc_url( admin_url( 'admin-post.php' ) );
+		?>
+		<div class="adc-admin-panel adc-csp-reports">
+			<h2 class="adc-no-top-margin">Content-Security-Policy: blocked sources</h2>
+			<p class="description">Sources that visitors' browsers reported in the last 30 days. Allowing a source adds it to that directive and saves the setting. Check each source first: an unexpected host can be a sign of injected script.</p>
+			<?php if ( empty( $rows ) ) : ?>
+				<p>No blocked sources have been reported.</p>
+			<?php else : ?>
+				<table class="widefat striped adc-status-table adc-csp-table">
+					<thead>
+						<tr>
+							<th>Directive</th>
+							<th>Source</th>
+							<th>Reports</th>
+							<th>Last seen (UTC)</th>
+							<th><span class="screen-reader-text">Action</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $rows as $row ) : ?>
+							<tr>
+								<td><code><?php echo esc_html( $row['directive'] ); ?></code></td>
+								<td><code><?php echo esc_html( $row['host'] ); ?></code></td>
+								<td><?php echo esc_html( number_format_i18n( (int) $row['count'] ) ); ?></td>
+								<td><?php echo esc_html( $row['last_seen'] ); ?></td>
+								<td>
+									<?php if ( '' !== $row['suggested_source'] ) : ?>
+										<form method="post" action="<?php echo $action; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-inline">
+											<?php wp_nonce_field( 'adc_security_csp_allow', 'adc_security_csp_nonce' ); ?>
+											<input type="hidden" name="action" value="adc_security_csp_allow">
+											<input type="hidden" name="directive" value="<?php echo esc_attr( $row['directive'] ); ?>">
+											<input type="hidden" name="source" value="<?php echo esc_attr( $row['suggested_source'] ); ?>">
+											<button type="submit" class="button button-secondary">Allow <code><?php echo esc_html( $row['suggested_source'] ); ?></code></button>
+										</form>
+									<?php endif; ?>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+			<form method="post" action="<?php echo $action; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- esc_url() above. ?>" class="adc-mb-10">
+				<?php wp_nonce_field( 'adc_security_csp_clear_reports', 'adc_security_csp_clear_nonce' ); ?>
+				<input type="hidden" name="action" value="adc_security_csp_clear_reports">
+				<button type="submit" class="button button-link-delete" <?php echo empty( $rows ) ? 'disabled' : ''; ?>>Clear blocked-source list</button>
+			</form>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Add a blocked source to a CSP directive (admin-post, nonce and capability checked).
+	 */
+	public function handle_csp_allow_source() {
+		check_admin_referer( 'adc_security_csp_allow', 'adc_security_csp_nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to perform this action.', 'adc-security' ) );
+		}
+
+		$directive = isset( $_POST['directive'] ) && is_string( $_POST['directive'] ) ? sanitize_text_field( wp_unslash( $_POST['directive'] ) ) : '';
+		$source    = isset( $_POST['source'] ) && is_string( $_POST['source'] ) ? sanitize_text_field( wp_unslash( $_POST['source'] ) ) : '';
+		$clean     = ADC_Security_Csp_Policy::sanitize_source( $source );
+
+		if ( in_array( $directive, ADC_Security_Csp_Policy::get_directives(), true ) && '' !== $clean ) {
+			$options = get_option( self::OPTION_NAME, array() );
+			if ( ! is_array( $options ) ) {
+				$options = array();
+			}
+			$all   = $this->get_option_array( $options, 'csp_extra_sources' );
+			$extra = $this->get_option_array( $all, $directive );
+			if ( ! in_array( $clean, $extra, true ) ) {
+				$extra[] = $clean;
+			}
+			$all[ $directive ]                   = array_values( $extra );
+			$options['csp_extra_sources']        = $all;
+			update_option( self::OPTION_NAME, $options );
+
+			add_settings_error( self::OPTION_NAME, 'adc_security_csp_allowed', esc_html( 'Allowed ' . $clean . ' for ' . $directive . '. Reports for it will stop once the new policy is in use.' ), 'updated' );
+		} else {
+			add_settings_error( self::OPTION_NAME, 'adc_security_csp_allow_failed', esc_html__( 'That source could not be allowed.', 'adc-security' ), 'error' );
+		}
+
+		$this->redirect_csp_notice();
+	}
+
+	/**
+	 * Clear the aggregated blocked-source list (admin-post, nonce and capability checked).
+	 */
+	public function handle_csp_clear_reports() {
+		check_admin_referer( 'adc_security_csp_clear_reports', 'adc_security_csp_clear_nonce' );
+
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to perform this action.', 'adc-security' ) );
+		}
+
+		$core = ADC_Security_Core::instance();
+		if ( isset( $core->csp_reports ) && $core->csp_reports instanceof ADC_Security_Csp_Reports ) {
+			$core->csp_reports->clear();
+		}
+
+		add_settings_error( self::OPTION_NAME, 'adc_security_csp_cleared', 'Blocked-source list cleared.', 'updated' );
+		$this->redirect_csp_notice();
+	}
+
+	/**
+	 * Return to the Hardening tab and show the queued settings errors, the same way options.php does.
+	 */
+	private function redirect_csp_notice() {
+		set_transient( 'settings_errors', get_settings_errors(), 30 );
+		wp_safe_redirect( add_query_arg(
+			array(
+				'page'             => 'adc-security',
+				'tab'              => 'hardening',
+				'settings-updated' => 'true',
+			),
+			admin_url( 'admin.php' )
+		) );
+		exit;
+	}
+
+	/**
 	 * Render the fixed security header allowlist.
 	 *
 	 * @param array $args Field arguments.
@@ -1788,6 +2225,7 @@ class ADC_Security_Settings {
 		?>
 		<input type="hidden" name="<?php echo esc_attr( self::OPTION_NAME . '[security_header_toggles][]' ); ?>" value="">
 		<?php foreach ( ADC_Security_Hardening::get_security_header_definitions() as $key => $definition ) : ?>
+			<?php if ( 'csp' === $key ) { continue; } ?>
 			<label class="adc-checkbox-row">
 				<input type="checkbox" name="<?php echo esc_attr( self::OPTION_NAME . '[security_header_toggles][]' ); ?>" value="<?php echo esc_attr( $key ); ?>" <?php checked( in_array( $key, $selected, true ) ); ?>>
 				<strong><?php echo esc_html( $definition['label'] ); ?></strong>
