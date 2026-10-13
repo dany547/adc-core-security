@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.13.0] - 2026-10-13
+### Added
+- **ADC Firewall Rules**: the virtual patching module now has its own **Firewall** tab. Each rule shows its CVE, severity, affected and fixed WordPress versions, a status badge and blocks in the last 7 days. A rule shows **Not needed** (and does not run at all) once the installed WordPress already includes its fix, using the fixed version of your own release branch. Rules are opt-in; **Log only** mode records matches without blocking so you can test first.
+- **Recent matches** panel with an **Allow this pattern** button for false positives.
+- **Safety by design**: any error lets the request through; WP-CLI, cron and allowlisted IPs are never screened; logged-in users pass rules that only target logged-out visitors, and editors are never blocked; a rule that blocks several legitimate-looking requests in a minute switches itself to Log only for 24 hours; `define( 'ADC_SECURITY_DISABLE_FIREWALL', true );` in wp-config.php turns everything off.
+- **Site Health test** for the firewall state.
+
+### Changed
+- Rule coverage verified against wordpress.org and the WordPress security advisory: CVE-2026-63030 (REST batch, fixed in 6.9.5 and 7.0.2), CVE-2026-60137 (`author__not_in`, fixed in 6.8.6, 6.9.5 and 7.0.2) and CVE-2026-87902 (`pagename`, fixed per branch from 4.7.37 to 7.1.2). The author rule now also checks `author_exclude` in REST requests and batch sub-requests, the route WordPress copies into `author__not_in`. The batch rule also covers `?rest_route=/batch/v1`.
+- Existing settings are migrated automatically; rule ids and the `virtual_patch` Activity event type are unchanged, so Activity filters and CSV exports keep working. The old Virtual Patching settings on the Hardening tab moved to the Firewall tab.
+
 ## [1.12.2] - 2026-10-13
 ### Fixed
 - **Plugin stopped itself on a single install** ("ADC Core Security is installed twice" with only one copy present): the duplicate-copy guard added in 1.12.1 also tested for the `adc_security()` function, which PHP defines while compiling the file, so the check was always true and the plugin, including its admin menu, never loaded. The guard now checks only for the plugin constant, the function is declared conditionally, and the notice names both the skipped and the running copy. If you installed 1.12.1, update to 1.12.2.

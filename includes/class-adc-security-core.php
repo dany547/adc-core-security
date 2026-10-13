@@ -96,6 +96,13 @@ class ADC_Security_Core {
 	public $virtual_patch;
 
 	/**
+	 * Firewall rules instance (replaces the virtual patch hooks from 1.13.0).
+	 *
+	 * @var ADC_Security_Firewall_Rules
+	 */
+	public $firewall_rules;
+
+	/**
 	 * File integrity scanner instance.
 	 *
 	 * @var ADC_Security_Integrity
@@ -206,6 +213,7 @@ class ADC_Security_Core {
 			'woo_registration_protect_wp_form'   => 1,
 			'woo_block_disposable_emails'        => 1,
 			'woo_blocked_email_domains'          => '',
+			// Deprecated since 1.13.0: migrated once into the adc_security_firewall option (see ADC_Security_Firewall_Rules::maybe_migrate()). Kept, not deleted.
 			'virtual_patch_rules'                => array(),
 			'virtual_patch_monitor'              => 0,
 			'vulnerability_feed_enabled'         => 0,
@@ -297,6 +305,13 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-2fa.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-rate-limit.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-virtual-patch.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-matchers.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-registry.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-engine.php';
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-rules.php';
+		if ( file_exists( ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-admin.php' ) ) {
+			require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-admin.php';
+		}
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-integrity.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-vulnerabilities.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-woo-rules.php';
@@ -321,7 +336,12 @@ class ADC_Security_Core {
 		$this->settings  = new ADC_Security_Settings( $this->htaccess );
 		$this->login     = new ADC_Security_Login();
 		$this->rate_limit = new ADC_Security_Rate_Limit( $this->login );
-		$this->virtual_patch = new ADC_Security_Virtual_Patch();
+		$this->virtual_patch = new ADC_Security_Virtual_Patch(); // Deprecated; registers no hooks.
+		$this->firewall_rules = new ADC_Security_Firewall_Rules();
+		$this->firewall_rules->register();
+		if ( class_exists( 'ADC_Security_Firewall_Admin' ) ) {
+			ADC_Security_Firewall_Admin::init();
+		}
 		$this->integrity      = new ADC_Security_Integrity();
 		$this->vulnerabilities = new ADC_Security_Vulnerabilities();
 		$this->hardening = new ADC_Security_Hardening( $this->csp );

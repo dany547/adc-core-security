@@ -163,4 +163,18 @@ jQuery(document).ready(function ($) {
         $('input[name="adc_security_options[security_header_toggles][]"]').on('change', updateHeaderRows);
         $('.adc-csp').on('change input', 'input, textarea, select', updateConditionalPanels);
     }
+
+    // --- Firewall: confirm before switching from Log only to Block ---
+    $(document).on('submit', 'form[data-adc-confirm-block]', function (event) {
+        var $form = $(this);
+        var wasMonitor = $form.attr('data-adc-was-mode') === 'monitor';
+        var goingBlock = $form.find('input[name="mode"]:checked').val() === 'enforce';
+        if (wasMonitor && goingBlock && !window.confirm($form.attr('data-adc-confirm-block'))) {
+            event.preventDefault();
+        }
+    });
+
+    $('.adc-fw-form').each(function () {
+        $(this).attr('data-adc-was-mode', $(this).find('input[name="mode"]:checked').val() || 'monitor');
+    });
 });

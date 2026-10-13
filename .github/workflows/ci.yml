@@ -99,6 +99,11 @@ jobs:
             "includes/class-adc-security-ip.php"
             "includes/class-adc-security-rate-limit.php"
             "includes/class-adc-security-virtual-patch.php"
+            "includes/class-adc-security-firewall-matchers.php"
+            "includes/class-adc-security-firewall-registry.php"
+            "includes/class-adc-security-firewall-engine.php"
+            "includes/class-adc-security-firewall-rules.php"
+            "includes/class-adc-security-firewall-admin.php"
             "includes/class-adc-security-integrity.php"
             "includes/class-adc-security-vulnerabilities.php"
             "includes/class-adc-security-cron-health.php"
@@ -147,6 +152,15 @@ jobs:
 
       - name: Test virtual patch matchers
         run: php tests/test-virtual-patch.php
+
+      - name: Test firewall registry
+        run: php tests/test-firewall-registry.php
+
+      - name: Test firewall engine
+        run: php tests/test-firewall-engine.php
+
+      - name: Test firewall corpus
+        run: php tests/test-firewall-corpus.php
 
       - name: Test vulnerability feed matchers
         run: php tests/test-vulnerability-feed.php

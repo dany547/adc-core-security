@@ -2,25 +2,16 @@
 /**
  * ADC Security Virtual Patch Class
  *
- * Request-level ("virtual patch") guards for WordPress core vulnerabilities
- * that are exploited in the wild, so a site keeps its protection window
- * between the day a CVE is published and the day the core update is actually
- * installed. Sites that deliberately delay core updates (or that cannot
- * update because of a host/plugin incompatibility) are exactly the audience
- * for this module.
+ * @deprecated 1.13.0 Replaced by ADC_Security_Firewall_Rules (includes/class-adc-security-firewall-rules.php),
+ *             which enforces the same rules through the firewall registry, engine and matchers.
+ *             This class no longer registers any hooks. It stays so the rule keys, the
+ *             legacy option reads and the matcher method names keep working for
+ *             callers and tests; the matchers delegate to ADC_Security_Firewall_Matchers.
  *
- * Every rule is opt-in, pattern-based — so it also catches encoding variants
- * of the same bug instead of one hardcoded exploit string — and can run in
- * monitor mode, which records the hit in the Activity log without blocking,
- * the same rollout model the WooCommerce rules already use.
- *
- * Rules shipped here:
- * - block_page_template_traversal  CVE-2026-87902 (unauthenticated LFI/RCE via
- *   double-encoded path traversal in the pagename query var).
- * - block_rest_batch_unauth        CVE-2026-63030 (unauthenticated REST batch
- *   route confusion, the first half of the "wp2shell" RCE chain).
- * - reject_author_query_injection  CVE-2026-60137 (WP_Query author__not_in SQL
- *   injection, the second half of the same chain).
+ * Rules shipped here (now defined in the firewall registry):
+ * - block_page_template_traversal  CVE-2026-87902
+ * - block_rest_batch_unauth        CVE-2026-63030
+ * - reject_author_query_injection  CVE-2026-60137
  *
  * @package ADCSecurity
  */
@@ -28,6 +19,8 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+
+require_once dirname( __FILE__ ) . '/class-adc-security-firewall-matchers.php';
 
 class ADC_Security_Virtual_Patch {
 
@@ -38,13 +31,14 @@ class ADC_Security_Virtual_Patch {
 	/**
 	 * Decode passes performed while probing for encoded path traversal.
 	 *
-	 * The exploit for CVE-2026-87902 is double-encoded, and PHP has already
-	 * decoded the request body once by the time the plugin sees it.
+	 * @deprecated 1.13.0 Use ADC_Security_Firewall_Matchers::MAX_DECODE_PASSES.
 	 */
 	const MAX_DECODE_PASSES = 4;
 
 	/**
 	 * Maximum recursion depth when walking nested request arrays.
+	 *
+	 * @deprecated 1.13.0 Use ADC_Security_Firewall_Matchers::MAX_ARG_DEPTH.
 	 */
 	const MAX_ARG_DEPTH = 5;
 
@@ -59,29 +53,11 @@ class ADC_Security_Virtual_Patch {
 	const EVENT_TYPE = 'virtual_patch';
 
 	/**
-	 * @var array Saved plugin options.
-	 */
-	private $options;
-
-	/**
-	 * Constructor. Only the hooks for the enabled rules are registered.
+	 * Constructor. Intentionally registers no hooks: ADC_Security_Firewall_Rules owns enforcement.
+	 *
+	 * @deprecated 1.13.0
 	 */
 	public function __construct() {
-		$this->options = get_option( ADC_Security_Settings::OPTION_NAME, array() );
-
-		$rules = self::get_enabled_rules( $this->options );
-
-		if ( in_array( self::RULE_PAGE_TEMPLATE_TRAVERSAL, $rules, true ) ) {
-			add_action( 'init', array( $this, 'guard_page_template_traversal' ), 0 );
-		}
-
-		if ( in_array( self::RULE_AUTHOR_QUERY_INJECTION, $rules, true ) ) {
-			add_action( 'init', array( $this, 'guard_author_query_injection' ), 0 );
-		}
-
-		if ( in_array( self::RULE_REST_BATCH_UNAUTH, $rules, true ) ) {
-			add_filter( 'rest_pre_dispatch', array( $this, 'guard_rest_batch' ), 1, 3 );
-		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -90,10 +66,6 @@ class ADC_Security_Virtual_Patch {
 
 	/**
 	 * Return the fixed rules this module can enforce.
-	 *
-	 * The labels are deliberately plain strings, like the .htaccess rule
-	 * definitions, so this class stays free of translation calls and can be
-	 * unit tested outside WordPress.
 	 *
 	 * @return array<string,array<string,string>>
 	 */
@@ -122,9 +94,9 @@ class ADC_Security_Virtual_Patch {
 	}
 
 	/**
-	 * Extract the enabled rule keys from the saved options.
+	 * Extract the enabled rule keys from the legacy saved options.
 	 *
-	 * @param array $options Saved plugin options.
+	 * @param array $options Saved plugin options (adc_security_options).
 	 * @return string[] Enabled rule keys.
 	 */
 	public static function get_enabled_rules( array $options ) {
@@ -137,228 +109,36 @@ class ADC_Security_Virtual_Patch {
 		return array_values( array_intersect( self::get_rule_keys(), $rules ) );
 	}
 
-	/**
-	 * @return bool Whether hits are logged without being blocked.
-	 */
-	private function is_monitor_mode() {
-		return ! empty( $this->options['virtual_patch_monitor'] );
-	}
-
 	// -------------------------------------------------------------------------
-	// Guards
+	// Pure matchers (delegating; kept for compatibility)
 	// -------------------------------------------------------------------------
 
 	/**
-	 * Reject traversal payloads aimed at the page-template resolver.
-	 *
-	 * Hooked on init so it runs before WP::parse_request(), the main query and
-	 * template loading. Admin requests are skipped: the vulnerable code path is
-	 * front-end template resolution, and wp-admin never renders a page
-	 * template.
-	 */
-	public function guard_page_template_traversal() {
-		if ( is_admin() ) {
-			return;
-		}
-
-		foreach ( array( $_GET, $_POST ) as $source ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.NonceVerification.Recommended -- Request screening, not a form handler.
-			if ( ! isset( $source['pagename'] ) || ! is_string( $source['pagename'] ) ) {
-				continue;
-			}
-
-			if ( self::contains_traversal( wp_unslash( $source['pagename'] ) ) ) {
-				$this->deny( 'CVE-2026-87902', 'pagename', 'page-template path traversal' );
-				return;
-			}
-		}
-	}
-
-	/**
-	 * Reject author query-argument injection passed over HTTP.
-	 *
-	 * Hooked on init, before WP::parse_request() turns $_GET into query vars.
-	 */
-	public function guard_author_query_injection() {
-		if ( is_admin() ) {
-			return;
-		}
-
-		foreach ( array( $_GET, $_POST ) as $source ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.NonceVerification.Recommended -- Request screening, not a form handler.
-			if ( self::contains_author_injection_arg( $source ) ) {
-				$this->deny( 'CVE-2026-60137', 'author__not_in', 'WP_Query author argument injection' );
-				return;
-			}
-		}
-	}
-
-	/**
-	 * Reject unauthenticated REST batch requests.
-	 *
-	 * @param mixed           $result  Short-circuit result from earlier filters.
-	 * @param WP_REST_Server  $server  REST server instance.
-	 * @param WP_REST_Request $request Current REST request.
-	 * @return mixed WP_Error when blocked, otherwise the value passed in.
-	 */
-	public function guard_rest_batch( $result, $server, $request ) {
-		if ( null !== $result ) {
-			return $result; // Another filter already decided; do not override it.
-		}
-
-		if ( is_user_logged_in() ) {
-			return $result; // The CVE chain is unauthenticated; logged-in batching stays available.
-		}
-
-		$route = $request instanceof WP_REST_Request ? (string) $request->get_route() : '';
-
-		if ( 0 !== strpos( $route, self::REST_BATCH_ROUTE ) ) {
-			return $result;
-		}
-
-		$blocked = $this->deny( 'CVE-2026-63030', self::REST_BATCH_ROUTE, 'unauthenticated REST batch request', false );
-
-		if ( ! $blocked ) {
-			return $result;
-		}
-
-		return new WP_Error(
-			'adc_virtual_patch_rest_batch_blocked',
-			esc_html__( 'This request was blocked by the ADC Security virtual patch rules.', 'adc-security' ),
-			array( 'status' => 403 )
-		);
-	}
-
-	// -------------------------------------------------------------------------
-	// Decision + logging
-	// -------------------------------------------------------------------------
-
-	/**
-	 * Log a matched rule and, unless monitor mode is on, fail the request.
-	 *
-	 * @param string $cve    CVE reference the rule covers.
-	 * @param string $target Request field or route that matched.
-	 * @param string $detail Human-readable reason.
-	 * @param bool   $exit   Whether an enforced match ends the request here.
-	 * @return bool True when the caller should block the request.
-	 */
-	private function deny( $cve, $target, $detail, $exit = true ) {
-		$enforced = ! $this->is_monitor_mode();
-
-		if ( class_exists( 'ADC_Security_Events' ) ) {
-			ADC_Security_Events::log(
-				self::EVENT_TYPE,
-				$enforced ? ADC_Security_Events::SEVERITY_CRITICAL : ADC_Security_Events::SEVERITY_WARNING,
-				array(
-					'ip'      => class_exists( 'ADC_Security_Ip' ) ? ADC_Security_Ip::get_client_ip() : '',
-					'object'  => $cve . ' ' . $target,
-					'context' => array(
-						'cve'     => $cve,
-						'target'  => $target,
-						'detail'  => $detail,
-						'monitor' => ! $enforced,
-					),
-				)
-			);
-		}
-
-		if ( ! $enforced ) {
-			return false;
-		}
-
-		if ( $exit ) {
-			status_header( 403 );
-			nocache_headers();
-			wp_die(
-				esc_html__( 'This request was blocked by the ADC Security virtual patch rules.', 'adc-security' ),
-				403,
-				array( 'response' => 403 )
-			);
-		}
-
-		return true;
-	}
-
-	// -------------------------------------------------------------------------
-	// Pure matchers (unit tested without WordPress)
-	// -------------------------------------------------------------------------
-
-	/**
-	 * Detect path traversal in a request value, at any encoding depth.
-	 *
-	 * Traversal always needs a ".." component, so that is the invariant this
-	 * checks for instead of one specific exploit string. The value is decoded
-	 * repeatedly because CVE-2026-87902 relies on sanitization running before
-	 * a late urldecode() — and a legitimate page slug or post name cannot
-	 * contain a percent sign, a backslash or two consecutive dots.
-	 *
+	 * @see ADC_Security_Firewall_Matchers::contains_traversal()
 	 * @param mixed $value Raw request value.
 	 * @return bool
 	 */
 	public static function contains_traversal( $value ) {
-		if ( ! is_string( $value ) || '' === $value ) {
-			return false;
-		}
-
-		if ( false !== strpos( $value, "\0" ) ) {
-			return true;
-		}
-
-		$probe = $value;
-
-		for ( $i = 0; $i < self::MAX_DECODE_PASSES; $i++ ) {
-			$decoded = rawurldecode( $probe );
-
-			if ( $decoded === $probe ) {
-				break;
-			}
-
-			$probe = $decoded;
-		}
-
-		return false !== strpos( $probe, '..' );
+		return ADC_Security_Firewall_Matchers::contains_traversal( $value );
 	}
 
 	/**
-	 * Whether one request argument is an author__in / author__not_in injection.
-	 *
+	 * @see ADC_Security_Firewall_Matchers::is_author_injection_arg()
 	 * @param string|int $key   Argument name.
 	 * @param mixed      $value Argument value.
 	 * @return bool
 	 */
 	public static function is_author_injection_arg( $key, $value ) {
-		if ( ! preg_match( '/^author__(not_)?in$/', (string) $key ) ) {
-			return false;
-		}
-
-		if ( is_array( $value ) ) {
-			return ! empty( $value );
-		}
-
-		return '' !== (string) $value;
+		return ADC_Security_Firewall_Matchers::is_author_injection_arg( $key, $value );
 	}
 
 	/**
-	 * Recursively look for an author__in / author__not_in injection inside a
-	 * request array (PHP builds nested arrays from bracket notation).
-	 *
+	 * @see ADC_Security_Firewall_Matchers::contains_author_injection_arg()
 	 * @param mixed $args  Request array.
 	 * @param int   $depth Current recursion depth.
 	 * @return bool
 	 */
 	public static function contains_author_injection_arg( $args, $depth = 0 ) {
-		if ( ! is_array( $args ) || $depth > self::MAX_ARG_DEPTH ) {
-			return false;
-		}
-
-		foreach ( $args as $key => $value ) {
-			if ( self::is_author_injection_arg( $key, $value ) ) {
-				return true;
-			}
-
-			if ( is_array( $value ) && self::contains_author_injection_arg( $value, $depth + 1 ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return ADC_Security_Firewall_Matchers::contains_author_injection_arg( $args, $depth );
 	}
 }

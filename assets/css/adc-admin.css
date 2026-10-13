@@ -327,3 +327,89 @@
         margin-left: 12px;
     }
 }
+
+/* Firewall tab (ADC_Security_Firewall_Admin). Colours reuse WP admin palette. */
+.adc-fw {
+    max-width: 1100px;
+}
+
+.adc-fw-controls {
+    border-bottom: 1px solid #dcdcde;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+}
+
+.adc-fw-switch {
+    display: block;
+    margin-bottom: 12px;
+}
+
+.adc-fw-mode legend {
+    padding: 0;
+    margin-bottom: 4px;
+}
+
+.adc-fw-indent {
+    margin: 0 0 8px 24px;
+}
+
+.adc-fw-summary {
+    margin: 12px 0 0;
+}
+
+.adc-fw-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.adc-fw-table {
+    margin-bottom: 12px;
+}
+
+.adc-fw-table td,
+.adc-fw-table th {
+    vertical-align: top;
+}
+
+.adc-fw-summary-text {
+    margin: 4px 0 0;
+}
+
+.adc-fw-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+
+.adc-fw-badge-critical { background: #fce4e4; color: #8a1f11; border-color: #d63638; }
+.adc-fw-badge-high { background: #fcf0e0; color: #7a4a00; border-color: #b46a00; }
+.adc-fw-badge-medium { background: #f0f0f1; color: #3c434a; border-color: #8c8f94; }
+.adc-fw-badge-active { background: #edfaef; color: #0a5c1f; border-color: #1e7a34; }
+.adc-fw-badge-monitor { background: #e5f5fa; color: #0a4b78; border-color: #2271b1; }
+.adc-fw-badge-off { background: #f0f0f1; color: #3c434a; border-color: #8c8f94; }
+.adc-fw-badge-ok { background: #f0f6fc; color: #1d2327; border-color: #7f9bb8; }
+
+.adc-fw-details > summary {
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.adc-fw-list {
+    margin: 12px 0 0 18px;
+    list-style: disc;
+}
+
+.adc-fw-list li {
+    margin-bottom: 8px;
+}
+
+@media screen and (max-width: 782px) {
+    .adc-fw-indent {
+        margin-left: 12px;
+    }
+}

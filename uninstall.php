@@ -19,6 +19,8 @@ delete_option( 'adc_security_htaccess_backup' );
 delete_option( 'adc_security_htaccess_state' );
 delete_option( 'adc_security_keys_backup' );
 delete_option( 'adc_security_db_version' );
+delete_option( 'adc_security_firewall' );
+delete_option( 'adc_security_firewall_db' );
 
 // Remove named transients and the events-retention cron.
 $transients = array(
@@ -90,4 +92,9 @@ $wpdb->query(
 // Remove cached vulnerability-feed lookups (dynamic per-component names).
 $wpdb->query(
 	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_vuln\_%' OR option_name LIKE '\_transient\_timeout\_adc\_vuln\_%'"
+);
+
+// Remove firewall rule state: block-streak counters and the error-log throttle (adc_fw_ prefix).
+$wpdb->query(
+	"DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_adc\_fw\_%' OR option_name LIKE '\_transient\_timeout\_adc\_fw\_%'"
 );
