@@ -4,7 +4,7 @@
  *
  * WordPress side of the request firewall: reads the rule registry, screens
  * requests with the pure matchers, asks the engine what to do, and enforces
- * or logs the result. It replaces the hooks of ADC_Security_Virtual_Patch.
+ * or logs the result. It replaced the hooks of the former virtual patch class.
  *
  * Design rules:
  * - Zero overhead when nothing is active: hooks are only added for rules whose

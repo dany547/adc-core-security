@@ -89,13 +89,6 @@ class ADC_Security_Core {
 	public $rate_limit;
 
 	/**
-	 * Virtual patch (request-level CVE guard) instance.
-	 *
-	 * @var ADC_Security_Virtual_Patch
-	 */
-	public $virtual_patch;
-
-	/**
 	 * Firewall rules instance (replaces the virtual patch hooks from 1.13.0).
 	 *
 	 * @var ADC_Security_Firewall_Rules
@@ -317,7 +310,6 @@ class ADC_Security_Core {
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-totp.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-2fa.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-rate-limit.php';
-		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-virtual-patch.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-matchers.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-registry.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-firewall-engine.php';
@@ -349,7 +341,6 @@ class ADC_Security_Core {
 		$this->settings  = new ADC_Security_Settings( $this->htaccess );
 		$this->login     = new ADC_Security_Login();
 		$this->rate_limit = new ADC_Security_Rate_Limit();
-		$this->virtual_patch = new ADC_Security_Virtual_Patch(); // Deprecated; registers no hooks.
 		$this->firewall_rules = new ADC_Security_Firewall_Rules();
 		$this->firewall_rules->register();
 		if ( class_exists( 'ADC_Security_Firewall_Admin' ) ) {

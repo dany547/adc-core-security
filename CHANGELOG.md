@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.13.6] - 2026-10-15
+### Changed
+- Internal clean-up with no visible change: removed the old virtual patch class, which had done nothing since 1.13.0 except forward to the firewall. The matchers now exist in one place only, and their tests moved with them.
+
 ## [1.13.5] - 2026-10-15
 ### Changed
 - Internal clean-up with no visible change: the Content-Security-Policy screens (scanner, blocked sources, buttons and their handlers) now live in their own file instead of the 3,000-line settings class. All 53 admin screens we render in testing are identical before and after.

@@ -4,9 +4,8 @@
  *
  * Pure, WordPress-free request matchers for the ADC Firewall Rules module.
  * contains_traversal(), is_author_injection_arg() and
- * contains_author_injection_arg() are behaviour-identical ports of the
- * matchers that ship in ADC_Security_Virtual_Patch, so that both code paths
- * agree on what a hostile request looks like.
+ * contains_author_injection_arg() are the single copy of these matchers (they
+ * used to be duplicated in a virtual patch class that has been removed).
  *
  * Nothing here calls WordPress functions, so the matchers run under plain PHP
  * (tests/test-firewall-matchers via tests/test-firewall-corpus.php).

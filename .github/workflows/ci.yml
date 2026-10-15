@@ -100,7 +100,6 @@ jobs:
             "includes/class-adc-security-2fa.php"
             "includes/class-adc-security-ip.php"
             "includes/class-adc-security-rate-limit.php"
-            "includes/class-adc-security-virtual-patch.php"
             "includes/class-adc-security-firewall-matchers.php"
             "includes/class-adc-security-firewall-registry.php"
             "includes/class-adc-security-firewall-engine.php"
@@ -158,8 +157,8 @@ jobs:
       - name: Test rate limiter
         run: php tests/test-rate-limit.php
 
-      - name: Test virtual patch matchers
-        run: php tests/test-virtual-patch.php
+      - name: Test firewall matchers
+        run: php tests/test-firewall-matchers.php
 
       - name: Test firewall registry
         run: php tests/test-firewall-registry.php
