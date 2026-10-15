@@ -86,6 +86,7 @@ jobs:
             "includes/class-adc-security-csp.php"
             "includes/class-adc-security-csp-reports.php"
             "includes/class-adc-security-csp-scanner.php"
+            "includes/class-adc-security-csp-admin.php"
             "includes/class-adc-security-captcha.php"
             "includes/class-adc-security-logger.php"
             "includes/class-adc-security-updater.php"

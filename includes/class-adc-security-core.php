@@ -302,6 +302,7 @@ class ADC_Security_Core {
 		if ( file_exists( ADC_SECURITY_DIR . 'includes/class-adc-security-csp-scanner.php' ) ) {
 			require_once ADC_SECURITY_DIR . 'includes/class-adc-security-csp-scanner.php';
 		}
+		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-csp-admin.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-settings.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-login.php';
 		require_once ADC_SECURITY_DIR . 'includes/class-adc-security-hardening.php';

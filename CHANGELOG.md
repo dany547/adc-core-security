@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.13.5] - 2026-10-15
+### Changed
+- Internal clean-up with no visible change: the Content-Security-Policy screens (scanner, blocked sources, buttons and their handlers) now live in their own file instead of the 3,000-line settings class. All 53 admin screens we render in testing are identical before and after.
+
 ## [1.13.4] - 2026-10-15
 ### Fixed
 - **IP allowlist and denylist matching** used its own address-range check that did not compare address families, so an IPv6 visitor could match an IPv4 range (and the other way round). Allowlist, denylist, rate limiting, firewall and WooCommerce checks now all use the one tested matcher.
