@@ -60,13 +60,6 @@ class ADC_Security_Woocommerce {
 	private $review_reasons = array();
 
 	/**
-	 * Login helper, reused for the IP allowlist.
-	 *
-	 * @var ADC_Security_Login|null
-	 */
-	private $login;
-
-	/**
 	 * Captcha module, reused for the optional Turnstile challenge.
 	 *
 	 * @var ADC_Security_Captcha|null
@@ -76,11 +69,10 @@ class ADC_Security_Woocommerce {
 	/**
 	 * Constructor.
 	 *
-	 * @param ADC_Security_Login|null   $login   Login helper (IP allowlist).
+	 * @param mixed                     $login   Deprecated and ignored; the IP allowlist is read via ADC_Security_Ip.
 	 * @param ADC_Security_Captcha|null $captcha Captcha helper (Turnstile).
 	 */
 	public function __construct( $login = null, $captcha = null ) {
-		$this->login   = $login instanceof ADC_Security_Login ? $login : null;
 		$this->captcha = $captcha instanceof ADC_Security_Captcha ? $captcha : null;
 
 		// WooCommerce may load after this plugin; wait until every plugin is loaded.
@@ -1472,7 +1464,7 @@ class ADC_Security_Woocommerce {
 	 * @return bool
 	 */
 	private function is_allowlisted_ip( $ip ) {
-		return $this->login && $this->login->is_ip_allowlisted( $ip );
+		return ADC_Security_Ip::is_allowlisted( $ip );
 	}
 
 	/**

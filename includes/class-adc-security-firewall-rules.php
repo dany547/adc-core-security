@@ -373,18 +373,7 @@ class ADC_Security_Firewall_Rules {
 			return false;
 		}
 
-		$options = get_option( 'adc_security_options', array() );
-		$raw     = is_array( $options ) && isset( $options['ip_allowlist'] ) ? (string) $options['ip_allowlist'] : '';
-
-		foreach ( preg_split( '/\R/', $raw ) as $line ) {
-			$entry = trim( $line );
-
-			if ( '' !== $entry && ADC_Security_Ip::ip_matches( $ip, $entry ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return ADC_Security_Ip::is_allowlisted( $ip );
 	}
 
 	// -------------------------------------------------------------------------

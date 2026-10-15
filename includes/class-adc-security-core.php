@@ -347,7 +347,7 @@ class ADC_Security_Core {
 		$this->csp_reports->register();
 		$this->settings  = new ADC_Security_Settings( $this->htaccess );
 		$this->login     = new ADC_Security_Login();
-		$this->rate_limit = new ADC_Security_Rate_Limit( $this->login );
+		$this->rate_limit = new ADC_Security_Rate_Limit();
 		$this->virtual_patch = new ADC_Security_Virtual_Patch(); // Deprecated; registers no hooks.
 		$this->firewall_rules = new ADC_Security_Firewall_Rules();
 		$this->firewall_rules->register();
@@ -359,7 +359,7 @@ class ADC_Security_Core {
 		$this->hardening = new ADC_Security_Hardening( $this->csp );
 		$this->captcha   = new ADC_Security_Captcha();
 		$this->events    = new ADC_Security_Events();
-		$this->woocommerce   = new ADC_Security_Woocommerce( $this->login, $this->captcha );
+		$this->woocommerce   = new ADC_Security_Woocommerce( null, $this->captcha );
 		$this->users_columns = new ADC_Security_Users_Columns();
 		ADC_Security_2fa::instance();
 

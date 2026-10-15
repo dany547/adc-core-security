@@ -151,11 +151,138 @@ class ADC_Security_Ip {
 	}
 
 	/**
+	 * Validate and canonise a single IP or CIDR rule. Pure: no WordPress needed.
+	 *
+	 * @param string $rule Raw rule string.
+	 * @return string|false Normalised rule, or false when it is not a valid IP/CIDR.
+	 */
+	public static function normalize_rule( $rule ) {
+		if ( ! is_string( $rule ) ) {
+			return false;
+		}
+
+		$rule = trim( $rule );
+		if ( '' === $rule ) {
+			return false;
+		}
+
+		if ( false !== strpos( $rule, '/' ) ) {
+			list( $addr, $cidr ) = explode( '/', $rule, 2 );
+
+			if ( ! filter_var( $addr, FILTER_VALIDATE_IP ) ) {
+				return false;
+			}
+
+			$packed = @inet_pton( $addr ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			if ( false === $packed || ! ctype_digit( $cidr ) ) {
+				// ctype_digit() rejects '', 'abc' and '8/9'; (int) would otherwise turn them into /0 (match everything).
+				return false;
+			}
+
+			$prefix = (int) $cidr;
+			if ( $prefix > strlen( $packed ) * 8 ) {
+				return false;
+			}
+
+			return $addr . '/' . $prefix;
+		}
+
+		return filter_var( $rule, FILTER_VALIDATE_IP ) ? $rule : false;
+	}
+
+	/**
+	 * Parse a textarea-style list into normalised, unique rules (order kept).
+	 * Accepts LF, CRLF or CR line endings; invalid lines are dropped.
+	 *
+	 * @param string $raw Raw option value.
+	 * @return string[]
+	 */
+	public static function parse_rules( $raw ) {
+		if ( ! is_string( $raw ) ) {
+			return array();
+		}
+
+		$rules = array();
+		$seen  = array();
+		foreach ( preg_split( '/\R/', $raw ) as $line ) {
+			$norm = self::normalize_rule( $line );
+			if ( false === $norm || isset( $seen[ $norm ] ) ) {
+				continue;
+			}
+			$seen[ $norm ] = true;
+			$rules[]       = $norm;
+		}
+
+		return $rules;
+	}
+
+	/**
+	 * Normalise a textarea-style list into newline-separated rules.
+	 *
+	 * @param string $raw Raw option value.
+	 * @return string
+	 */
+	public static function normalize_list( $raw ) {
+		return implode( "\n", self::parse_rules( $raw ) );
+	}
+
+	/**
+	 * Whether $ip matches any rule in $rules. Mixed address families never match.
+	 *
+	 * @param string   $ip    Client IP.
+	 * @param string[] $rules IPs/CIDRs (normally from parse_rules()).
+	 * @return bool
+	 */
+	public static function matches_any( $ip, array $rules ) {
+		return self::ip_matches_any( $ip, $rules );
+	}
+
+	/**
+	 * Whether $ip is covered by the ip_allowlist option.
+	 *
+	 * @param string $ip Client IP.
+	 * @return bool
+	 */
+	public static function is_allowlisted( $ip ) {
+		return self::option_list_matches( $ip, 'ip_allowlist' );
+	}
+
+	/**
+	 * Whether $ip is covered by the ip_denylist option.
+	 *
+	 * @param string $ip Client IP.
+	 * @return bool
+	 */
+	public static function is_denylisted( $ip ) {
+		return self::option_list_matches( $ip, 'ip_denylist' );
+	}
+
+	/**
+	 * @param string $ip  Client IP.
+	 * @param string $key Option key inside adc_security_options holding a textarea list.
+	 * @return bool
+	 */
+	private static function option_list_matches( $ip, $key ) {
+		if ( ! is_string( $ip ) || '' === $ip ) {
+			return false;
+		}
+
+		$options = get_option( 'adc_security_options', array() );
+		$raw     = is_array( $options ) && isset( $options[ $key ] ) ? $options[ $key ] : '';
+
+		return self::matches_any( $ip, self::parse_rules( $raw ) );
+	}
+
+	/**
 	 * @param string   $ip   IP to test.
 	 * @param string[] $list IPs/CIDRs to test against.
 	 * @return bool
 	 */
-	private static function ip_matches_any( $ip, array $list ) {
+	public static function ip_matches_any( $ip, array $list ) {
+		if ( ! is_string( $ip ) || '' === $ip ) {
+			return false;
+		}
+
 		foreach ( $list as $entry ) {
 			if ( self::ip_matches( $ip, trim( $entry ) ) ) {
 				return true;

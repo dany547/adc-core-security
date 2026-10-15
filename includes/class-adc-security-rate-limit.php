@@ -7,7 +7,7 @@
  * ?author= enumeration, and unauthenticated REST reads/writes to sensitive
  * routes. Complements (does not replace) the brute-force lockout in
  * ADC_Security_Login, which tracks failed *credentials* rather than raw
- * request volume.
+ * request volume. IP allowlist checks go through ADC_Security_Ip.
  *
  * @package ADCSecurity
  */
@@ -48,13 +48,9 @@ class ADC_Security_Rate_Limit {
 	);
 
 	/**
-	 * @var ADC_Security_Login|null Used only for is_ip_allowlisted() reuse.
+	 * Registers the request guards on WordPress hooks.
 	 */
-	private $login;
-
-	public function __construct( ?ADC_Security_Login $login = null ) {
-		$this->login = $login instanceof ADC_Security_Login ? $login : new ADC_Security_Login();
-
+	public function __construct() {
 		add_action( 'init', array( $this, 'guard_login_and_xmlrpc' ), 0 );
 		add_action( 'parse_request', array( $this, 'guard_author_scan' ) );
 		add_filter( 'rest_pre_dispatch', array( $this, 'guard_rest' ), 5, 3 );
@@ -143,7 +139,7 @@ class ADC_Security_Rate_Limit {
 	 */
 	private function enforce( $scope ) {
 		$ip = ADC_Security_Ip::get_client_ip();
-		if ( '' === $ip || $this->login->is_ip_allowlisted( $ip ) ) {
+		if ( '' === $ip || ADC_Security_Ip::is_allowlisted( $ip ) ) {
 			return;
 		}
 

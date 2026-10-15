@@ -68,7 +68,7 @@ class ADC_Security_Events {
 			self::SEVERITY_NOTICE,
 			array(
 				'username' => $username,
-				'ip'       => $this->get_client_ip(),
+				'ip'       => ADC_Security_Ip::get_client_ip(),
 			)
 		);
 	}
@@ -80,7 +80,7 @@ class ADC_Security_Events {
 			array(
 				'username' => $user_login,
 				'user_id'  => $user instanceof WP_User ? $user->ID : 0,
-				'ip'       => $this->get_client_ip(),
+				'ip'       => ADC_Security_Ip::get_client_ip(),
 			)
 		);
 	}
@@ -230,12 +230,4 @@ class ADC_Security_Events {
 		}
 	}
 
-	/**
-	 * Best-effort client IP lookup for hooks that don't receive it directly.
-	 *
-	 * @return string
-	 */
-	private function get_client_ip() {
-		return ADC_Security_Ip::get_client_ip();
-	}
 }

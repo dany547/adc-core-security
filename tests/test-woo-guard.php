@@ -343,6 +343,9 @@ class ADC_Security_Ip {
 	public static function get_client_ip() {
 		return $GLOBALS['test_state']['ip'];
 	}
+	public static function is_allowlisted( $ip ) {
+		return ! empty( $GLOBALS['test_state']['allowlisted'] );
+	}
 }
 class ADC_Security_Events {
 	const SEVERITY_WARNING = 2;

@@ -37,19 +37,8 @@ class ADC_Security_Login {
 	}
 
 	// -------------------------------------------------------------------------
-	// IP helpers
+	// IP helpers (thin wrappers; the implementation lives in ADC_Security_Ip)
 	// -------------------------------------------------------------------------
-
-	/**
-	 * Return the validated client IP, honoring the configured trusted proxy
-	 * (if any). See ADC_Security_Ip for the shared implementation used by
-	 * every IP-based feature in the plugin.
-	 *
-	 * @return string
-	 */
-	private function get_client_ip() {
-		return ADC_Security_Ip::get_client_ip();
-	}
 
 	/**
 	 * Validate and canonise a single IP or CIDR rule.
@@ -58,124 +47,7 @@ class ADC_Security_Login {
 	 * @return string|false Normalised rule or false on failure.
 	 */
 	public function normalize_ip_rule( $rule ) {
-		$rule = trim( $rule );
-
-		if ( '' === $rule ) {
-			return false;
-		}
-
-		if ( strpos( $rule, '/' ) !== false ) {
-			$parts = explode( '/', $rule, 2 );
-			$addr  = $parts[0];
-			$cidr  = (int) $parts[1];
-
-			if ( ! filter_var( $addr, FILTER_VALIDATE_IP ) ) {
-				return false;
-			}
-
-			$packed = @inet_pton( $addr );
-			if ( false === $packed ) {
-				return false;
-			}
-
-			$bits = strlen( $packed ) * 8;
-
-			if ( $cidr < 0 || $cidr > $bits ) {
-				return false;
-			}
-
-			return $addr . '/' . $cidr;
-		}
-
-		if ( ! filter_var( $rule, FILTER_VALIDATE_IP ) ) {
-			return false;
-		}
-
-		return $rule;
-	}
-
-	/**
-	 * Check whether a single IP matches a rule (IP or CIDR).
-	 *
-	 * @param string $ip   Client IP.
-	 * @param string $rule IP or CIDR rule.
-	 * @return bool
-	 */
-	private function ip_matches_rule( $ip, $rule ) {
-		if ( strpos( $rule, '/' ) !== false ) {
-			$parts = explode( '/', $rule, 2 );
-			$net   = $parts[0];
-			$cidr  = (int) $parts[1];
-
-			$ip_bin     = @inet_pton( $ip );
-			$net_bin    = @inet_pton( $net );
-
-			if ( false === $ip_bin || false === $net_bin ) {
-				return false;
-			}
-
-			$mask = -1 << ( 32 - $cidr );
-			// IPv6: work with packed binary directly for the mask length.
-			if ( strlen( $ip_bin ) === 16 ) {
-				// Create a mask for IPv6.
-				$mask_bits = str_repeat( "\xff", intdiv( $cidr, 8 ) );
-				$remainder = $cidr % 8;
-				if ( $remainder > 0 ) {
-					$mask_bits .= chr( 0xff << ( 8 - $remainder ) );
-				}
-				$mask_bits .= str_repeat( "\x00", 16 - strlen( $mask_bits ) );
-
-				return ( $ip_bin & $mask_bits ) === ( $net_bin & $mask_bits );
-			}
-
-			// IPv4
-			$mask_bin = pack( 'N', $mask );
-
-			return ( $ip_bin & $mask_bin ) === ( $net_bin & $mask_bin );
-		}
-
-		return $ip === $rule;
-	}
-
-	/**
-	 * Check whether an IP matches any rule in a list.
-	 *
-	 * @param string $ip    Client IP.
-	 * @param array  $rules Array of normalised rules.
-	 * @return bool
-	 */
-	private function ip_matches_list( $ip, $rules ) {
-		foreach ( $rules as $rule ) {
-			if ( $this->ip_matches_rule( $ip, $rule ) ) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Parse a textarea-style list into normalised unique rules.
-	 *
-	 * @param string $raw Newline-separated rules.
-	 * @return array
-	 */
-	private function parse_ip_list( $raw ) {
-		$lines = array_map( 'trim', explode( "\n", $raw ) );
-		$rules = array();
-		$seen  = array();
-
-		foreach ( $lines as $line ) {
-			$norm = $this->normalize_ip_rule( $line );
-			if ( false === $norm ) {
-				continue;
-			}
-			if ( ! isset( $seen[ $norm ] ) ) {
-				$seen[ $norm ] = true;
-				$rules[]       = $norm;
-			}
-		}
-
-		return $rules;
+		return ADC_Security_Ip::normalize_rule( $rule );
 	}
 
 	// -------------------------------------------------------------------------
@@ -210,20 +82,17 @@ class ADC_Security_Login {
 			return;
 		}
 
-		$ip = $this->get_client_ip();
+		$ip = ADC_Security_Ip::get_client_ip();
 		if ( '' === $ip ) {
 			return;
 		}
 
-		$allow_rules = $this->parse_ip_list( isset( $this->options['ip_allowlist'] ) ? $this->options['ip_allowlist'] : '' );
-		$deny_rules  = $this->parse_ip_list( isset( $this->options['ip_denylist'] ) ? $this->options['ip_denylist'] : '' );
-
 		// Allowlist takes priority.
-		if ( ! empty( $allow_rules ) && $this->ip_matches_list( $ip, $allow_rules ) ) {
+		if ( ADC_Security_Ip::is_allowlisted( $ip ) ) {
 			return;
 		}
 
-		if ( ! empty( $deny_rules ) && $this->ip_matches_list( $ip, $deny_rules ) ) {
+		if ( ADC_Security_Ip::is_denylisted( $ip ) ) {
 			/**
 			 * Fires when a request is blocked by the IP denylist.
 			 *
@@ -245,13 +114,7 @@ class ADC_Security_Login {
 	 * @return bool
 	 */
 	public function is_ip_allowlisted( $ip ) {
-		if ( '' === $ip ) {
-			return false;
-		}
-
-		$allow_rules = $this->parse_ip_list( isset( $this->options['ip_allowlist'] ) ? $this->options['ip_allowlist'] : '' );
-
-		return ! empty( $allow_rules ) && $this->ip_matches_list( $ip, $allow_rules );
+		return ADC_Security_Ip::is_allowlisted( $ip );
 	}
 
 	// -------------------------------------------------------------------------
@@ -290,7 +153,7 @@ class ADC_Security_Login {
 			}
 		}
 
-		$ip      = $this->get_client_ip();
+		$ip      = ADC_Security_Ip::get_client_ip();
 		$agent   = isset( $_SERVER['HTTP_USER_AGENT'] ) ? substr( sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ), 0, 200 ) : 'Unknown';
 		$now     = current_time( 'mysql' );
 		$display = ! empty( $user->display_name ) ? $user->display_name : $user_login;
@@ -470,7 +333,7 @@ class ADC_Security_Login {
 	}
 
 	public function handle_failed_login( $username ) {
-		$ip = $this->get_client_ip();
+		$ip = ADC_Security_Ip::get_client_ip();
 		if ( '' === $ip ) {
 			return;
 		}
@@ -524,7 +387,7 @@ class ADC_Security_Login {
 	}
 
 	public function check_login_attempts( $user, $username, $password ) {
-		$ip = $this->get_client_ip();
+		$ip = ADC_Security_Ip::get_client_ip();
 		if ( '' === $ip ) {
 			return $user;
 		}

@@ -233,7 +233,7 @@ class ADC_Security_2fa {
 				ADC_Security_Events::SEVERITY_WARNING,
 				array(
 					'user_id' => $user_id,
-					'ip'      => $this->get_client_ip(),
+					'ip'      => ADC_Security_Ip::get_client_ip(),
 					'context' => array( 'remaining' => count( $hashes ) ),
 				)
 			);
@@ -250,7 +250,7 @@ class ADC_Security_2fa {
 				/* translators: 1: date and time, 2: IP address, 3: number of unused recovery codes left */
 				__( "A two-factor recovery code was used to sign in to your account.\n\nTime: %1\$s\nIP address: %2\$s\nUnused recovery codes remaining: %3\$d\n\nIf this was not you, change your password immediately and review your account.", 'adc-security' ),
 				wp_date( 'Y-m-d H:i:s T' ),
-				$this->get_client_ip(),
+				ADC_Security_Ip::get_client_ip(),
 				count( $hashes )
 			)
 		);
@@ -386,7 +386,7 @@ class ADC_Security_2fa {
 				ADC_Security_Events::SEVERITY_WARNING,
 				array(
 					'user_id' => $user_id,
-					'ip'      => $this->get_client_ip(),
+					'ip'      => ADC_Security_Ip::get_client_ip(),
 					'context' => array( 'window_seconds' => self::USER_FAIL_WINDOW ),
 				)
 			);
@@ -812,7 +812,7 @@ class ADC_Security_2fa {
 				ADC_Security_Events::SEVERITY_NOTICE,
 				array(
 					'user_id' => $target_user_id,
-					'ip'      => $this->get_client_ip(),
+					'ip'      => ADC_Security_Ip::get_client_ip(),
 					'context' => array( 'actor_user_id' => $current_id ),
 				)
 			);
@@ -829,7 +829,7 @@ class ADC_Security_2fa {
 				/* translators: 1: date and time, 2: IP address */
 				__( "Two-factor authentication was disabled on your account.\n\nTime: %1\$s\nIP address: %2\$s\n\nIf you did not make this change, contact your site administrator and change your password.", 'adc-security' ),
 				wp_date( 'Y-m-d H:i:s T' ),
-				$this->get_client_ip()
+				ADC_Security_Ip::get_client_ip()
 			)
 		);
 
@@ -891,7 +891,7 @@ class ADC_Security_2fa {
 					ADC_Security_Events::SEVERITY_WARNING,
 					array(
 						'user_id' => $actor_id,
-						'ip'      => $this->get_client_ip(),
+						'ip'      => ADC_Security_Ip::get_client_ip(),
 						'context' => array( 'target_user_id' => (int) $target_id ),
 					)
 				);
@@ -1011,7 +1011,7 @@ class ADC_Security_2fa {
 		if ( 'POST' === $_SERVER['REQUEST_METHOD'] ) {
 			check_admin_referer( 'adc_security_2fa_verify' );
 
-			$fail_key = 'adc_2fa_fail_' . md5( $user_id . '|' . $this->get_client_ip() );
+			$fail_key = 'adc_2fa_fail_' . md5( $user_id . '|' . ADC_Security_Ip::get_client_ip() );
 			$fails    = (int) get_transient( $fail_key );
 
 			if ( $this->is_user_locked( $user_id ) ) {
@@ -1046,7 +1046,7 @@ class ADC_Security_2fa {
 							ADC_Security_Events::SEVERITY_INFO,
 							array(
 								'user_id' => $user_id,
-								'ip'      => $this->get_client_ip(),
+								'ip'      => ADC_Security_Ip::get_client_ip(),
 							)
 						);
 					}
@@ -1171,13 +1171,6 @@ class ADC_Security_2fa {
 		</p>
 		<?php
 		login_footer();
-	}
-
-	/**
-	 * @return string
-	 */
-	private function get_client_ip() {
-		return ADC_Security_Ip::get_client_ip();
 	}
 
 	// -------------------------------------------------------------------------

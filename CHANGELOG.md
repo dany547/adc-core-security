@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.4] - 2026-10-15
+### Fixed
+- **IP allowlist and denylist matching** used its own address-range check that did not compare address families, so an IPv6 visitor could match an IPv4 range (and the other way round). Allowlist, denylist, rate limiting, firewall and WooCommerce checks now all use the one tested matcher.
+- **A mistyped range** such as `1.2.3.4/` or `1.2.3.4/abc` used to be saved as `/0`, which matches every address. A denylist typo like that could have blocked all visitors; such entries are now rejected.
+
+### Changed
+- Internal clean-up with no change to settings or screens: one place now decides who the visitor is and whether they are on your IP lists. Rate limiting and WooCommerce no longer need the login module for that, and saving settings no longer creates a login object just to check IP lists.
+
 ## [1.13.3] - 2026-10-13
 ### Added
 - **Firewall "At a glance" panel**: whether the firewall is off, in Log only mode or blocking; what protects the site (firewall rules, `.htaccess` rules, rate limiting, lockouts, IP lists, user enumeration, XML-RPC) with a link to where each is set; and the number of blocks, rate limits, lockouts and denied IPs in the last 7 days.

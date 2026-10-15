@@ -1685,11 +1685,10 @@ class ADC_Security_Settings {
 		}
 
 		// IP Allowlist / Denylist: validate, normalise, deduplicate
-		$ip_login = new ADC_Security_Login();
 		foreach ( array( 'ip_allowlist', 'ip_denylist' ) as $list_key ) {
 			if ( isset( $input[ $list_key ] ) ) {
 				$raw = $input[ $list_key ];
-				$new_input[ $list_key ] = $this->sanitize_ip_list( $raw, $ip_login );
+				$new_input[ $list_key ] = $this->sanitize_ip_list( $raw );
 			}
 		}
 
@@ -1698,7 +1697,7 @@ class ADC_Security_Settings {
 			$new_input['trusted_proxy_header'] = in_array( $input['trusted_proxy_header'], $allowed_headers, true ) ? $input['trusted_proxy_header'] : '';
 		}
 		if ( isset( $input['trusted_proxies'] ) ) {
-			$new_input['trusted_proxies'] = $this->sanitize_ip_list( $input['trusted_proxies'], $ip_login );
+			$new_input['trusted_proxies'] = $this->sanitize_ip_list( $input['trusted_proxies'] );
 		}
 
 		// Flush rewriting rules if custom login slug changes.
@@ -1712,27 +1711,11 @@ class ADC_Security_Settings {
 	/**
 	 * Parse, validate, deduplicate and return a newline-separated IP list string.
 	 *
-	 * @param string            $raw      Raw textarea value.
-	 * @param ADC_Security_Login $ip_login Login helper instance.
+	 * @param mixed $raw Raw textarea value.
 	 * @return string
 	 */
-	private function sanitize_ip_list( $raw, $ip_login ) {
-		$lines = array_map( 'trim', explode( "\n", $raw ) );
-		$valid = array();
-		$seen  = array();
-
-		foreach ( $lines as $line ) {
-			$norm = $ip_login->normalize_ip_rule( $line );
-			if ( false === $norm ) {
-				continue;
-			}
-			if ( ! isset( $seen[ $norm ] ) ) {
-				$seen[ $norm ] = true;
-				$valid[]       = $norm;
-			}
-		}
-
-		return implode( "\n", $valid );
+	private function sanitize_ip_list( $raw ) {
+		return ADC_Security_Ip::normalize_list( is_string( $raw ) ? $raw : '' );
 	}
 
 	/**
